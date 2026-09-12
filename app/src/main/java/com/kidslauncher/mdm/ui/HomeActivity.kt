@@ -18,7 +18,6 @@ import com.kidslauncher.mdm.server.reevaluateLockReasonFromCache
 import com.kidslauncher.mdm.openAppsList
 import com.kidslauncher.mdm.preferences.LauncherPreferences
 import com.kidslauncher.mdm.requestNotificationPermission
-import com.kidslauncher.mdm.setDefaultHomeScreen
 import com.kidslauncher.mdm.ui.minimalist.MinimalistHomeAdapter
 import com.kidslauncher.mdm.ui.quickcontrols.QuickControlsActivity
 import kotlin.math.abs
@@ -145,11 +144,16 @@ class HomeActivity : UIObjectActivity() {
     override fun onStart() {
         super.onStart()
 
-        // First launch: mark it done and try to set the default home screen
+        // LOCAL-DEVIATION: upstream also called setDefaultHomeScreen() here, which asks for
+        // Android's HOME role on first launch. That is a second route to becoming the home screen,
+        // entirely separate from AppEnforcer's Device-Owner pinning, and it defeats the same goal:
+        // Samsung Kids is launched from One UI Home and is meaningless without it. Dropped rather
+        // than gated - when kiosk is genuinely wanted, AppEnforcer.enforceDefaultHome pins this
+        // launcher through the Device Owner API, which is both stronger and already conditional.
+        // This launcher stays reachable as a normal app from the Samsung app drawer.
         if (!LauncherPreferences.internal().started()) {
             LauncherPreferences.internal().started(true)
             LauncherPreferences.internal().startedTime(System.currentTimeMillis() / 1000L)
-            setDefaultHomeScreen(this, checkDefault = true)
             requestNotificationPermission(this)
         }
 
