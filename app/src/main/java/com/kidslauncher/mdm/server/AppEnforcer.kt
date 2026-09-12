@@ -308,7 +308,14 @@ object AppEnforcer {
                 dpm.setAlwaysOnVpnPackage(admin, context.packageName, false)
                 KidVpnService.start(context)
             } else {
-                dpm.setAlwaysOnVpnPackage(admin, null, false)
+                // LOCAL-DEVIATION: upstream cleared the always-on designation unconditionally here.
+                // With the built-in filter off, this household runs WireGuard instead (one VPN at a
+                // time - see OPDRACHT.md's conflict 1), and a parent-configured always-on WireGuard
+                // was being wiped on every sync, which is exactly what stops a kid turning the
+                // tunnel - and with it the DNS filtering - off. Only clear our own designation.
+                if (dpm.getAlwaysOnVpnPackage(admin) == context.packageName) {
+                    dpm.setAlwaysOnVpnPackage(admin, null, false)
+                }
                 KidVpnService.stop(context)
             }
         } catch (e: Exception) {
