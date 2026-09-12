@@ -103,7 +103,24 @@ object AppEnforcer {
         // actively released (not merely left unset) while it is off.
         enforceDefaultHome(dpm, admin, context, kioskDesired = effectivePolicy?.kioskDesired == true)
 
-        val allowedPackages = effectivePolicy?.allowlist?.takeIf { it.isNotEmpty() }?.toSet()
+        // LOCAL-DEVIATION: upstream suspends purely on the allowlist, so the weekday/weekend and
+        // bedtime windows never touched app availability at all - they only drove the launcher's own
+        // lock screen, which is almost never in the foreground here because One UI Home stays the
+        // home screen for Samsung Kids. Suspension is the only enforcement that survives that, so
+        // the schedule feeds it: `configuredAllowlist` is still "may this kid ever use it", and
+        // `allowedPackages` narrows that to what is permitted at this moment. See
+        // [KidModeEnforcer.isAppAllowedNow].
+        val configuredAllowlist = effectivePolicy?.allowlist?.takeIf { it.isNotEmpty() }?.toSet()
+        val rulesByPackage = effectivePolicy?.appRules.orEmpty().associateBy { it.packageName }
+        val now = java.util.Calendar.getInstance()
+        val allowedPackages = if (configuredAllowlist == null || effectivePolicy == null) {
+            null
+        } else {
+            configuredAllowlist
+                .filterTo(mutableSetOf()) {
+                    KidModeEnforcer.isAppAllowedNow(rulesByPackage[it], effectivePolicy, now)
+                }
+        }
         val ownPackage = context.packageName
         val pm = context.packageManager
 
@@ -146,7 +163,9 @@ object AppEnforcer {
         }
 
         applyKioskState(
-            dpm, admin, ownPackage, allowedPackages,
+            // Never pin with an empty set - during bedtime every time-limited app drops out of
+            // allowedPackages, and pinning to nothing but the launcher would strand the device.
+            dpm, admin, ownPackage, allowedPackages?.takeIf { it.isNotEmpty() },
             kioskDesired = effectivePolicy?.kioskDesired == true,
             lockTaskFeatures = effectivePolicy?.lockTaskFeatures ?: 0,
         )

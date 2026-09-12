@@ -25,6 +25,8 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class PolicyResponse(
     val allowlist: List<String>? = null,
+    /** LOCAL-DEVIATION: per-app schedule - see [AppRule]. */
+    val appRules: List<AppRule> = emptyList(),
     val weekdayStartMinutes: Int? = null,
     val weekdayEndMinutes: Int? = null,
     val weekendStartMinutes: Int? = null,
