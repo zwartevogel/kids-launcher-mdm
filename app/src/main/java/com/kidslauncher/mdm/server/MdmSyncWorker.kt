@@ -389,6 +389,14 @@ private fun collectInstalledApps(context: Context): List<InstalledApp> {
                 // excluded from getInstalledApplications(0), which would otherwise drop any
                 // currently-unchecked app right back out of this report.
                 val info = pm.getApplicationInfo(packageName, PackageManager.MATCH_UNINSTALLED_PACKAGES)
+                // LOCAL-DEVIATION: MATCH_UNINSTALLED_PACKAGES is required above so a *hidden*
+                // (unchecked) app keeps its row on the admin site, but it also returns packages
+                // that were genuinely removed for this user with `pm uninstall --user 0` - which
+                // then sat in the admin list forever looking installed, with no way to tell the
+                // two states apart. FLAG_INSTALLED is exactly that distinction: a hidden package
+                // keeps it (installed=true hidden=true), a user-uninstalled one does not
+                // (installed=false). Verified on the device with `dumpsys package`.
+                if ((info.flags and ApplicationInfo.FLAG_INSTALLED) == 0) return@mapNotNull null
                 InstalledApp(
                     packageName = packageName,
                     label = pm.getApplicationLabel(info).toString(),

@@ -149,6 +149,13 @@ object AppEnforcer {
 
         clearRadioRestrictions(dpm, admin)
 
+        // LOCAL-DEVIATION: without kiosk pinning the notification shade stays reachable, and its
+        // Location tile let the kid turn location tracking off from the home screen - the one
+        // restriction that has to hold for Home Assistant to know where the phone is. Lifted
+        // together with every other restriction while an override is active, same as the rest of
+        // apply().
+        applyLocationRestriction(dpm, admin, locked = !overrideActive)
+
         // Same "fully open" treatment as everything else while an override is active - confirmed
         // live this needs to include the VPN filter too: the whole point of the offline-override PIN
         // and the pause-restrictions kill-switch is a guaranteed working, unblocked device when
@@ -255,6 +262,17 @@ object AppEnforcer {
      * a device that already had "restricted" or "disabled" saved from before this change needs
      * those actively lifted, not just abandoned in whatever state they were last left in.
      */
+    /**
+     * LOCAL-DEVIATION: stops the kid flipping Location off from the Quick Settings tile (or the
+     * Settings app, if it is ever allowed). [UserManager.DISALLOW_CONFIG_LOCATION] only blocks
+     * *changing* the setting - it does not turn location on by itself, so a parent still decides
+     * whether it is on in the first place. Idempotent and individually guarded, matching the rest
+     * of this file.
+     */
+    private fun applyLocationRestriction(dpm: DevicePolicyManager, admin: ComponentName, locked: Boolean) {
+        setRestriction(dpm, admin, UserManager.DISALLOW_CONFIG_LOCATION, locked)
+    }
+
     private fun clearRadioRestrictions(dpm: DevicePolicyManager, admin: ComponentName) {
         setRestriction(dpm, admin, UserManager.DISALLOW_CHANGE_WIFI_STATE, false)
         setRestriction(dpm, admin, UserManager.DISALLOW_ADD_WIFI_CONFIG, false)
