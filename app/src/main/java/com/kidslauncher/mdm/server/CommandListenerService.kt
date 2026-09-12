@@ -61,9 +61,9 @@ private const val PERIODIC_SYNC_INTERVAL_MS = 5 * 60 * 1000L
  * Settings, off by default) - one persistent connection/notification doing two jobs instead of
  * a second dedicated distributor app running its own.
  *
- * Also drives [performJournalSync] and [performBrowserHistorySync] off the same two triggers as
- * [performMdmSync] - see [performJournalSync]'s own doc comment for why each is a separate
- * mutex/coroutine rather than folded into [performMdmSync] itself.
+ * Also drives [performJournalSync] off the same two triggers as [performMdmSync] - see that
+ * function's own doc comment for why it is a separate mutex/coroutine rather than folded into
+ * [performMdmSync] itself.
  */
 class CommandListenerService : Service() {
     private val scope = CoroutineScope(Dispatchers.IO + Job())
@@ -165,7 +165,6 @@ class CommandListenerService : Service() {
                     // already keeps this from overlapping itself, and a slow media upload
                     // shouldn't delay the next policy fetch.
                     scope.launch { performJournalSync(applicationContext) }
-                    scope.launch { performBrowserHistorySync(applicationContext) }
                 }
 
                 override fun onClosed(eventSource: EventSource) {
@@ -187,7 +186,6 @@ class CommandListenerService : Service() {
             {
                 scope.launch { performMdmSync(applicationContext) }
                 scope.launch { performJournalSync(applicationContext) }
-                scope.launch { performBrowserHistorySync(applicationContext) }
                 schedulePeriodicSync()
             },
             PERIODIC_SYNC_INTERVAL_MS,

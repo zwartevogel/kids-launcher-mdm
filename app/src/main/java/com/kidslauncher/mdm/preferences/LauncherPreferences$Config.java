@@ -127,11 +127,6 @@ import eu.jonahbauer.android.preference.annotations.Preferences;
                         // "never synced, start from the beginning". Only advanced after the
                         // server confirms a batch landed, so a failed upload can't lose entries.
                         @Preference(name = "journal_sync_since_id", type = long.class, defaultValue = "0"),
-                        // Same cursor concept as journal_sync_since_id above, but for the browser
-                        // fork's own history journal provider (see server.BrowserHistorySync).
-                        // Independent value since the two providers/apps have unrelated _id
-                        // sequences.
-                        @Preference(name = "browser_history_sync_since_id", type = long.class, defaultValue = "0"),
                 }),
         })
 public final class LauncherPreferences$Config {

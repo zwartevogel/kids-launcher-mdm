@@ -63,10 +63,6 @@
          only if this app is signed with the exact same certificate as com.kidsmdm.im. See
          server.JournalSync.kt and this repo's CLAUDE.md for the signing-key requirement. -->
     <uses-permission android:name="com.kidsmdm.im.ACCESS_JOURNAL" />
-    <!-- Same signature-permission gate as above, but for com.kidsmdm.browser.journal's
-         ContentProvider (the kids-mdm-browser fork's history journal). See
-         server.BrowserHistorySync.kt - same signing-key requirement applies. -->
-    <uses-permission android:name="com.kidsmdm.browser.ACCESS_JOURNAL" />
 
     <application
         android:name=".Application"

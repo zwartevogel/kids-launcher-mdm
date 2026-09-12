@@ -29,7 +29,6 @@ import com.kidslauncher.mdm.server.cachedPolicy
 import com.kidslauncher.mdm.server.createMdmApi
 import com.kidslauncher.mdm.server.dto.EnrollRequest
 import com.kidslauncher.mdm.server.dto.ProvisioningExtras
-import com.kidslauncher.mdm.server.performBrowserHistorySync
 import com.kidslauncher.mdm.server.performJournalSync
 import com.kidslauncher.mdm.server.performMdmSync
 import com.kidslauncher.mdm.server.reevaluateLockReasonFromCache
@@ -332,8 +331,8 @@ class SettingsFragmentLauncher : PreferenceFragmentCompat() {
      * Dev-testing shortcut: runs the same policy fetch + enforcement cycle
      * [com.kidslauncher.mdm.server.CommandListenerService] runs periodically, immediately - avoids
      * waiting a full cycle per test iteration (e.g. right after changing the allowlist or kiosk
-     * setting on the admin site). Also kicks off the journal/browser-history syncs the same way
-     * [CommandListenerService] does off its own triggers - own coroutines, not awaited before the
+     * setting on the admin site). Also kicks off the journal sync the same way
+     * [CommandListenerService] does off its own triggers - own coroutine, not awaited before the
      * toast below, since [performMdmSync]'s return value (whether policy fetch succeeded) is
      * already the more useful "did this reach the server at all" signal, and a slow media upload
      * from the journal sync shouldn't hold up that feedback.
@@ -347,7 +346,6 @@ class SettingsFragmentLauncher : PreferenceFragmentCompat() {
         }
 
         CoroutineScope(Dispatchers.IO).launch { performJournalSync(context) }
-        CoroutineScope(Dispatchers.IO).launch { performBrowserHistorySync(context) }
 
         CoroutineScope(Dispatchers.IO).launch {
             val reachedServer = try {

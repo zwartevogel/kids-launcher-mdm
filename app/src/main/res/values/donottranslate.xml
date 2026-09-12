@@ -39,7 +39,6 @@
     <string name="settings_mdm_unifiedpush_distributor_enabled_key" translatable="false">mdm.unifiedpush_distributor_enabled</string>
     <string name="settings_mdm_unifiedpush_registrations_key" translatable="false">mdm.unifiedpush_registrations</string>
     <string name="settings_mdm_journal_sync_since_id_key" translatable="false">mdm.journal_sync_since_id</string>
-    <string name="settings_mdm_browser_history_sync_since_id_key" translatable="false">mdm.browser_history_sync_since_id</string>
     <string name="settings_mdm_device_token_key" translatable="false">mdm.device_token</string>
     <string name="settings_mdm_enrolled_key" translatable="false">mdm.enrolled</string>
     <string name="settings_mdm_kid_mode_policy_key" translatable="false">mdm.kid_mode_policy</string>

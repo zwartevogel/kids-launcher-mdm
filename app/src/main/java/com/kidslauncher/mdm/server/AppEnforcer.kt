@@ -379,9 +379,8 @@ object AppEnforcer {
      *
      * Scope is deliberately narrow: DNS-based blocking is handled elsewhere (KidVpnService's
      * on-device filter / the server's DNS blocklist), so this only closes the browser-side gaps
-     * that would otherwise route around it or hide activity from the history journal -
-     * Secure DNS (would bypass the DNS filter entirely), Incognito/Guest mode (would hide
-     * browsing from [performBrowserHistorySync]), developer tools and extension installs
+     * that would otherwise route around it - Secure DNS (would bypass the DNS filter entirely),
+     * Incognito/Guest mode, developer tools and extension installs
      * (both plausible tamper vectors on a kid's device), and the browser's own proxy settings
      * (another potential bypass route). Same "fully open" treatment as every other restriction
      * in [apply] while an override is active - [locked] is false in that case and every value
