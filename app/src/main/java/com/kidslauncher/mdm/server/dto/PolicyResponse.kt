@@ -38,6 +38,14 @@ data class PolicyResponse(
     val overridePinHash: String? = null,
     val overridePinSalt: String? = null,
     val quickControlsMask: Long = 0,
+    /**
+     * LOCAL-DEVIATION: whether WireGuard is enforced as Android's always-on VPN *with lockdown*
+     * (all non-tunnel traffic dropped) rather than merely auto-started. Defaults to false, not to
+     * the server's own default of true: a policy that somehow arrives without this field should
+     * leave the device connectable, never strand it behind a tunnel it can't reach.
+     * See [com.kidslauncher.mdm.server.AppEnforcer.applyAlwaysOnVpn].
+     */
+    val vpnLockdownEnabled: Boolean = false,
     val pendingCommand: PendingCommand? = null,
     val packagesToUninstall: List<String> = emptyList(),
 )

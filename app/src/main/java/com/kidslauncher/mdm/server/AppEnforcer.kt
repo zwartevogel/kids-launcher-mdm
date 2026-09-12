@@ -181,7 +181,13 @@ object AppEnforcer {
 
         applyTamperRestrictions(dpm, admin, locked = !overrideActive)
 
-        applyAlwaysOnVpn(dpm, admin, context, locked = !overrideActive)
+        applyAlwaysOnVpn(
+            dpm,
+            admin,
+            context,
+            locked = !overrideActive,
+            lockdown = effectivePolicy?.vpnLockdownEnabled == true && !overrideActive,
+        )
 
         applyPrivateDnsLock(dpm, admin)
 
@@ -340,6 +346,7 @@ object AppEnforcer {
         admin: ComponentName,
         context: Context,
         locked: Boolean,
+        lockdown: Boolean,
     ) {
         try {
             val wireguardInstalled = try {
@@ -348,9 +355,20 @@ object AppEnforcer {
             } catch (e: PackageManager.NameNotFoundException) {
                 false
             }
+            // LOCAL-DEVIATION: lockdown is server-controlled instead of upstream's hardcoded
+            // false. Without it, "always-on" only means Android auto-starts the app: the tunnel
+            // stays switchable from WireGuard's own UI and the phone keeps working without it,
+            // which is not what always-on is meant to buy here. With it, non-tunnel traffic is
+            // dropped in the kernel, so switching the tunnel off costs all connectivity.
+            //
+            // It is a per-device switch (the admin site's "Force the WireGuard tunnel") rather
+            // than always-on-in-code because lockdown has no notion of exempt address ranges,
+            // only exempt packages: any range the profile excludes from AllowedIPs - the home
+            // LAN in particular - becomes unreachable the moment lockdown engages. That is a
+            // decision about the tunnel's configuration, so it belongs with the parent.
             when {
                 locked && wireguardInstalled ->
-                    dpm.setAlwaysOnVpnPackage(admin, WIREGUARD_PACKAGE_NAME, false)
+                    dpm.setAlwaysOnVpnPackage(admin, WIREGUARD_PACKAGE_NAME, lockdown)
                 dpm.getAlwaysOnVpnPackage(admin) != null ->
                     dpm.setAlwaysOnVpnPackage(admin, null, false)
             }

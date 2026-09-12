@@ -35,7 +35,7 @@ jobs:
       # divergence policy. Counts app/ sources only; raise EXPECTED deliberately when a new
       # divergence is added, and lower it only when one is genuinely retired.
       run: |
-        EXPECTED=23
+        EXPECTED=25
         MARKER="LOCAL-$(echo DEVIATION):"
         FOUND=$(grep -rIo "$MARKER" app | wc -l)
         echo "Found $FOUND deviation markers in app/ (expected at least $EXPECTED)"
