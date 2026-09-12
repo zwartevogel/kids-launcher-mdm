@@ -14,6 +14,11 @@ jobs:
   build:
 
     runs-on: ubuntu-latest
+    # This fork's default GITHUB_TOKEN is read-only (GitHub's default for new repositories),
+    # which fails the release step with a 403. Granted explicitly here rather than via the
+    # repository setting, so it stays in version control.
+    permissions:
+      contents: write
 
     steps:
     - uses: actions/checkout@v4
