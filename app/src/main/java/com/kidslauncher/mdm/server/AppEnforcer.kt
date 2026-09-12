@@ -17,6 +17,10 @@ import com.kidslauncher.mdm.ui.HomeActivity
 
 private const val LOG_TAG = "AppEnforcer"
 
+/** LOCAL-DEVIATION: the VPN this household runs instead of the launcher's own DNS filter - see
+ * [AppEnforcer.applyVpnRestrictions]. */
+private const val WIREGUARD_PACKAGE_NAME = "com.wireguard.android"
+
 /** applicationId of the kids-mdm-browser fork - see [AppEnforcer.applyBrowserPolicy]. */
 private const val BROWSER_PACKAGE_NAME = "com.kidsmdm.browser"
 
@@ -352,13 +356,29 @@ object AppEnforcer {
             } else {
                 // LOCAL-DEVIATION: upstream cleared the always-on designation unconditionally here.
                 // With the built-in filter off, this household runs WireGuard instead (one VPN at a
-                // time - see OPDRACHT.md's conflict 1), and a parent-configured always-on WireGuard
-                // was being wiped on every sync, which is exactly what stops a kid turning the
-                // tunnel - and with it the DNS filtering - off. Only clear our own designation.
-                if (dpm.getAlwaysOnVpnPackage(admin) == context.packageName) {
-                    dpm.setAlwaysOnVpnPackage(admin, null, false)
-                }
+                // time - see OPDRACHT.md's conflict 1), and the tunnel is what carries DNS to
+                // AdGuard, so it has to survive a kid tapping the toggle inside the WireGuard app.
+                // An app's own managed-config only ever binds that app's UI (this project learned
+                // that the hard way with Tailscale's QS tile); always-on is enforced by the
+                // connectivity stack itself, independent of the app's cooperation.
+                //
+                // Lockdown stays OFF deliberately: it forces *all* traffic through the tunnel, and
+                // this deployment keeps the local subnet outside it so the phone stays reachable on
+                // the LAN for management. Without lockdown, Android still auto-starts/restarts the
+                // service and still blocks disabling it from Settings.
                 KidVpnService.stop(context)
+                val wireguardInstalled = try {
+                    context.packageManager.getPackageInfo(WIREGUARD_PACKAGE_NAME, 0)
+                    true
+                } catch (e: PackageManager.NameNotFoundException) {
+                    false
+                }
+                when {
+                    wireguardInstalled ->
+                        dpm.setAlwaysOnVpnPackage(admin, WIREGUARD_PACKAGE_NAME, false)
+                    dpm.getAlwaysOnVpnPackage(admin) == context.packageName ->
+                        dpm.setAlwaysOnVpnPackage(admin, null, false)
+                }
             }
         } catch (e: Exception) {
             Log.w(LOG_TAG, "Failed to apply VPN filter enabled state", e)
