@@ -93,7 +93,11 @@ object AppEnforcer {
         val overrideActive = OfflineOverride.isActive() || LauncherPreferences.mdm().restrictionsPaused()
         val effectivePolicy = if (overrideActive) null else policy
 
-        enforceDefaultHome(dpm, admin, context)
+        // LOCAL-DEVIATION: upstream pins this launcher as the permanent HOME app unconditionally.
+        // Samsung Kids only functions while One UI Home is still the home screen, so this follows
+        // the same kiosk setting as the lock-task pinning below - pinned while kiosk is on,
+        // actively released (not merely left unset) while it is off.
+        enforceDefaultHome(dpm, admin, context, kioskDesired = effectivePolicy?.kioskDesired == true)
 
         val allowedPackages = effectivePolicy?.allowlist?.takeIf { it.isNotEmpty() }?.toSet()
         val ownPackage = context.packageName
@@ -475,9 +479,31 @@ object AppEnforcer {
      * The regular "set as default launcher" flow ([com.kidslauncher.mdm.setDefaultHomeScreen]) is
      * just a user-revocable preference - a reinstall/reboot race, or a kid holding down the home
      * button, can fall back to another HOME-capable app (e.g. the OS's own stock launcher) if one
-     * is installed. As device owner we can pin this unconditionally instead.
+     * is installed. As device owner we can pin this instead.
+     *
+     * LOCAL-DEVIATION: upstream pins unconditionally. Here the pinning follows [kioskDesired], so
+     * that One UI Home stays the home screen while kiosk is off - Samsung Kids is launched from it
+     * and is meaningless without it. Releasing has to be an active
+     * [DevicePolicyManager.clearPackagePersistentPreferredActivities] call rather than just
+     * skipping the setter, since a device pinned by an earlier build (or by an earlier cycle with
+     * kiosk on) stays pinned until something explicitly clears it. Both branches are idempotent and
+     * individually guarded, matching the defensive style of the rest of this file.
      */
-    private fun enforceDefaultHome(dpm: DevicePolicyManager, admin: ComponentName, context: Context) {
+    private fun enforceDefaultHome(
+        dpm: DevicePolicyManager,
+        admin: ComponentName,
+        context: Context,
+        kioskDesired: Boolean,
+    ) {
+        if (!kioskDesired) {
+            try {
+                dpm.clearPackagePersistentPreferredActivities(admin, context.packageName)
+            } catch (e: Exception) {
+                Log.w(LOG_TAG, "Failed to clear persistent preferred HOME activity", e)
+            }
+            return
+        }
+
         val filter = IntentFilter(Intent.ACTION_MAIN).apply {
             addCategory(Intent.CATEGORY_HOME)
             addCategory(Intent.CATEGORY_DEFAULT)
