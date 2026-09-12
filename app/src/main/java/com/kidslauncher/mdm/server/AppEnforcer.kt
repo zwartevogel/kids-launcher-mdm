@@ -156,6 +156,8 @@ object AppEnforcer {
         // apply().
         applyLocationRestriction(dpm, admin, locked = !overrideActive)
 
+        applyTamperRestrictions(dpm, admin, locked = !overrideActive)
+
         // Same "fully open" treatment as everything else while an override is active - confirmed
         // live this needs to include the VPN filter too: the whole point of the offline-override PIN
         // and the pause-restrictions kill-switch is a guaranteed working, unblocked device when
@@ -271,6 +273,28 @@ object AppEnforcer {
      */
     private fun applyLocationRestriction(dpm: DevicePolicyManager, admin: ComponentName, locked: Boolean) {
         setRestriction(dpm, admin, UserManager.DISALLOW_CONFIG_LOCATION, locked)
+    }
+
+    /**
+     * LOCAL-DEVIATION: the escape hatches that make every other restriction in this file pointless,
+     * closed as a set. Android will not let even a Device Owner suspend the Settings app (verified
+     * on the A17 - every other unchecked app suspends, Settings refuses), and kiosk pinning is not
+     * available here because Samsung Kids needs One UI Home, so the Settings surface has to be
+     * narrowed from the inside instead.
+     *
+     * The clock one is the load-bearing entry: schedule windows and bedtime are evaluated on-device
+     * against `Calendar.getInstance()`, so a kid who can change the time simply walks out of
+     * bedtime. Automatic network time keeps working - only manual changes are blocked.
+     *
+     * Deliberately NOT included: [UserManager.DISALLOW_DEBUGGING_FEATURES]. Wireless debugging is
+     * the management path for this deployment and the documented recovery procedure depends on it.
+     */
+    private fun applyTamperRestrictions(dpm: DevicePolicyManager, admin: ComponentName, locked: Boolean) {
+        setRestriction(dpm, admin, UserManager.DISALLOW_CONFIG_DATE_TIME, locked)
+        setRestriction(dpm, admin, UserManager.DISALLOW_FACTORY_RESET, locked)
+        setRestriction(dpm, admin, UserManager.DISALLOW_SAFE_BOOT, locked)
+        setRestriction(dpm, admin, UserManager.DISALLOW_ADD_USER, locked)
+        setRestriction(dpm, admin, UserManager.DISALLOW_CONFIG_VPN, locked)
     }
 
     private fun clearRadioRestrictions(dpm: DevicePolicyManager, admin: ComponentName) {
