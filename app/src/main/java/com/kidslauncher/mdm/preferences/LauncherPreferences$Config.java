@@ -122,11 +122,6 @@ import eu.jonahbauer.android.preference.annotations.Preferences;
                         // anything the registering app ever sees directly - it only ever gets the
                         // full https://ntfy.sh/<topic> endpoint URL via NEW_ENDPOINT.
                         @Preference(name = "unifiedpush_registrations", type = String.class),
-                        // Highest kids-mdm-im journal `_id` already forwarded to the server (see
-                        // server.JournalSync) - the provider's own pull-sync cursor, 0 means
-                        // "never synced, start from the beginning". Only advanced after the
-                        // server confirms a batch landed, so a failed upload can't lose entries.
-                        @Preference(name = "journal_sync_since_id", type = long.class, defaultValue = "0"),
                 }),
         })
 public final class LauncherPreferences$Config {

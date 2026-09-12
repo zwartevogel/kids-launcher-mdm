@@ -7,7 +7,6 @@ import com.kidslauncher.mdm.server.dto.DnsEventReport
 import com.kidslauncher.mdm.server.dto.EnrollRequest
 import com.kidslauncher.mdm.server.dto.EnrollResponse
 import com.kidslauncher.mdm.server.dto.InstallProgressReport
-import com.kidslauncher.mdm.server.dto.JournalEntryUpload
 import com.kidslauncher.mdm.server.dto.PolicyResponse
 import com.kidslauncher.mdm.server.dto.StatusReportRequest
 import com.kidslauncher.mdm.server.dto.TrackedAppUpdate
@@ -16,14 +15,12 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNamingStrategy
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
-import okhttp3.RequestBody
 import okhttp3.ResponseBody
 import retrofit2.Response
 import retrofit2.Retrofit
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.POST
-import retrofit2.http.Path
 import retrofit2.http.Streaming
 import retrofit2.http.Url
 import java.util.concurrent.TimeUnit
@@ -79,20 +76,6 @@ interface MdmApi {
     @Streaming
     @GET
     suspend fun downloadTrackedApp(@Url url: String): Response<ResponseBody>
-
-    /** Runs as one server-side transaction, all-or-nothing - see
-     * [com.kidslauncher.mdm.server.JournalSync] for why the sync cursor only advances after this
-     * actually succeeds. */
-    @POST("api/devices/journal")
-    suspend fun uploadJournalEntries(@Body entries: List<JournalEntryUpload>): Response<Unit>
-
-    /** [remoteId] must already exist server-side (i.e. [uploadJournalEntries] ran first for it) -
-     * the server uses it purely to scope this upload to a row this device already reported. */
-    @POST("api/devices/journal/media/{remoteId}")
-    suspend fun uploadJournalMedia(
-        @Path("remoteId") remoteId: Long,
-        @Body body: RequestBody,
-    ): Response<Unit>
 }
 
 /** [token] is omitted for the enroll-only call (no token exists yet); pass it for every

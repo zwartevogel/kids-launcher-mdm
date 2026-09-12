@@ -60,10 +60,7 @@ private const val PERIODIC_SYNC_INTERVAL_MS = 5 * 60 * 1000L
  * [UnifiedPushRelay] (a UnifiedPush distributor for *other* apps on the device, opt-in from
  * Settings, off by default) - one persistent connection/notification doing two jobs instead of
  * a second dedicated distributor app running its own.
- *
- * Also drives [performJournalSync] off the same two triggers as [performMdmSync] - see that
- * function's own doc comment for why it is a separate mutex/coroutine rather than folded into
- * [performMdmSync] itself.
+
  */
 class CommandListenerService : Service() {
     private val scope = CoroutineScope(Dispatchers.IO + Job())
@@ -161,10 +158,6 @@ class CommandListenerService : Service() {
                 override fun onEvent(eventSource: EventSource, id: String?, type: String?, data: String) {
                     Log.i(LOG_TAG, "Command stream nudge received, syncing early")
                     scope.launch { performMdmSync(applicationContext) }
-                    // Own coroutine, not chained after performMdmSync above - journalSyncMutex
-                    // already keeps this from overlapping itself, and a slow media upload
-                    // shouldn't delay the next policy fetch.
-                    scope.launch { performJournalSync(applicationContext) }
                 }
 
                 override fun onClosed(eventSource: EventSource) {
@@ -185,7 +178,6 @@ class CommandListenerService : Service() {
         handler.postDelayed(
             {
                 scope.launch { performMdmSync(applicationContext) }
-                scope.launch { performJournalSync(applicationContext) }
                 schedulePeriodicSync()
             },
             PERIODIC_SYNC_INTERVAL_MS,

@@ -59,10 +59,6 @@
          element's android:permission attribute (restricting who may bind to it, i.e. only the
          OS) - not something this app requests for its own use, so no <uses-permission> for it. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
-    <!-- Gates com.kidsmdm.im.journal's ContentProvider (protectionLevel="signature") - granted
-         only if this app is signed with the exact same certificate as com.kidsmdm.im. See
-         server.JournalSync.kt and this repo's CLAUDE.md for the signing-key requirement. -->
-    <uses-permission android:name="com.kidsmdm.im.ACCESS_JOURNAL" />
 
     <application
         android:name=".Application"
