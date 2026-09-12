@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [ "master" ]
 
+# LOCAL-DEVIATION: upstream builds tsnet.aar here first (set up Go, install the Android NDK, then
+# `gomobile bind` against mobile/tsembed) and uploads it as a second artifact. tsnet is removed in
+# this fork, so this is a plain Gradle build - which also retires the three unpinned `@latest` Go
+# dependencies that build pulled in (tsnet, anet, gomobile/gobind).
 jobs:
   build:
 
@@ -20,45 +24,6 @@ jobs:
         distribution: 'temurin'
         cache: gradle
 
-    - name: set up Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: '1.23'
-    - name: Install Android NDK
-      run: $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "ndk;28.1.13356709"
-    - name: Build tsnet.aar with gomobile
-      # tsnet (tailscale.com/tsnet) gives the launcher its own embeddable tailnet
-      # connection - see this repo's CLAUDE.md for why (replaces the standalone
-      # Tailscale app + the DoT-to-Pi Private DNS approach). Binds against
-      # mobile/tsembed, a thin wrapper (not tsnet.Server directly - gobind can't
-      # generate bindings for tsnet.Server's own methods, several of which return
-      # more values than gobind supports; see mobile/tsembed's package doc).
-      # gomobile compiles it (and its transitive deps - WireGuard, the userspace
-      # netstack, etc.) into an Android-consumable .aar; app/build.gradle.kts
-      # references the output by path. arm64-only since that's the only
-      # architecture either test device needs - see CLAUDE.md if that ever needs
-      # to change.
-      run: |
-        export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.1.13356709"
-        go install golang.org/x/mobile/cmd/gomobile@latest
-        go install golang.org/x/mobile/cmd/gobind@latest
-        mkdir -p app/libs
-        cd mobile
-        go get tailscale.com/tsnet@latest
-        # Works around a real, currently-open upstream gap (tailscale/tailscale#17311):
-        # tsnet.Server.Start calls Go's net.Interfaces() internally, which Android's
-        # SELinux policy blocks for unprivileged apps - see tsembed.go's init().
-        go get github.com/wlynxg/anet@latest
-        # Go 1.24+ requires a build tool to be an explicit `tool` dependency in
-        # go.mod, not just globally `go install`'d - gomobile bind builds
-        # generated glue code inside this module's context, so it needs
-        # golang.org/x/mobile declared here too, not just on the CI runner's PATH.
-        go get -tool golang.org/x/mobile/cmd/gobind
-        gomobile init
-        # -checklinkname=0: anet uses //go:linkname internally (a low-level Go
-        # runtime linking mechanism) which Go 1.23+ restricts by default unless
-        # explicitly allowed - see github.com/wlynxg/anet's own build notes.
-        gomobile bind -o ../app/libs/tsnet.aar -target=android/arm64 -androidapi 34 -ldflags="-checklinkname=0" ./tsembed
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
     - name: Read Debug Keystore
@@ -76,14 +41,6 @@ jobs:
       with:
         name: launcher-debug-${{ github.sha }}.apk
         path: app/build/outputs/apk/debug/app-debug.apk
-    - name: Upload tsnet.aar
-      # Not consumed by anything - purely so the generated gobind Java/Kotlin
-      # API surface can be inspected without a local Go toolchain. Safe to
-      # remove once TsnetClient.kt is written and stable.
-      uses: actions/upload-artifact@v4
-      with:
-        name: tsnet-aar-${{ github.sha }}
-        path: app/libs/tsnet.aar
 
     - name: Delete Old Pre-Release
       if: github.ref == 'refs/heads/master'

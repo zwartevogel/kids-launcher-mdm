@@ -44,19 +44,6 @@ import kotlinx.coroutines.withContext
 private const val LOG_TAG = "SettingsFragmentLauncher"
 
 /**
- * "Set"/"Not set" alone left no way to tell *which* key is configured, or to notice a stale one
- * from a prior scan - reported directly after the Tailscale key visibly worked but the summary
- * gave no indication anything had actually changed. Shows just enough (a masked prefix plus the
- * real last 4 characters) to recognize the value without displaying the secret itself on a screen
- * anyone glancing at the phone could read.
- */
-private fun maskedSecretSummary(value: String?): String {
-    if (value.isNullOrBlank()) return "Not set"
-    val tail = value.takeLast(4)
-    return "••••••••$tail"
-}
-
-/**
  * The [SettingsFragmentLauncher] holds all of the app's settings on a single screen.
  */
 class SettingsFragmentLauncher : PreferenceFragmentCompat() {
@@ -104,20 +91,6 @@ class SettingsFragmentLauncher : PreferenceFragmentCompat() {
             ) { value ->
                 mdm.serverUrl(value)
                 serverUrl.summary = value.orNotSet()
-            }
-            true
-        }
-
-        val tailscaleAuthKey = findPreference<Preference>(mdm.keys().tailscaleAuthKey())
-        tailscaleAuthKey?.summary = maskedSecretSummary(mdm.tailscaleAuthKey())
-        tailscaleAuthKey?.setOnPreferenceClickListener {
-            showEditTextDialog(
-                requireContext(),
-                getString(R.string.settings_mdm_tailscale_auth_key),
-                currentValue = null,
-            ) { value ->
-                mdm.tailscaleAuthKey(value)
-                tailscaleAuthKey.summary = maskedSecretSummary(value)
             }
             true
         }
@@ -285,8 +258,8 @@ class SettingsFragmentLauncher : PreferenceFragmentCompat() {
      * no trigger in that OS's setup wizard at all, see kid-phone-server's `handlers::provisioning`).
      * Only meaningful once Device Owner is already granted some other way (currently
      * `adb shell dpm set-device-owner`) - scanning here never touches Device Owner state itself,
-     * only the server URL/Tailscale key/enrollment code that would otherwise need typing in by
-     * hand across three separate preference dialogs.
+     * only the server URL/enrollment code that would otherwise need typing in by hand across
+     * separate preference dialogs.
      */
     private fun launchSetupQrScanner() {
         val context = requireContext()
@@ -332,9 +305,8 @@ class SettingsFragmentLauncher : PreferenceFragmentCompat() {
             return
         }
 
-        val appContext = context.applicationContext
         CoroutineScope(Dispatchers.IO).launch {
-            val outcome = applyProvisioningExtras(appContext, extras)
+            val outcome = applyProvisioningExtras(extras)
             withContext(Dispatchers.Main) {
                 outcome.onSuccess {
                     Toast.makeText(context, R.string.toast_mdm_enroll_success, Toast.LENGTH_LONG)
@@ -342,14 +314,9 @@ class SettingsFragmentLauncher : PreferenceFragmentCompat() {
                     // Refresh preference summaries in place - applyProvisioningExtras persisted
                     // new values this screen already read into local vals in onCreatePreferences,
                     // so those closures' captured Preference views need an explicit update rather
-                    // than relying on a full screen recreation. Read the actual persisted values
-                    // back rather than trusting extras.tailscaleAuthKey directly - a blank value in
-                    // the scanned QR leaves whatever key was already configured untouched, and the
-                    // summary should reflect that instead of falsely showing "Not set".
+                    // than relying on a full screen recreation.
                     val mdm = LauncherPreferences.mdm()
                     findPreference<Preference>(mdm.keys().serverUrl())?.summary = mdm.serverUrl()
-                    findPreference<Preference>(mdm.keys().tailscaleAuthKey())?.summary =
-                        maskedSecretSummary(mdm.tailscaleAuthKey())
                 }.onFailure { e ->
                     Toast.makeText(
                         context,

@@ -42,11 +42,6 @@ import eu.jonahbauer.android.preference.annotations.Preferences;
                         // Bearer credential returned by POST /api/devices/enroll - the one-shot
                         // enrollment code used to get it is never itself persisted.
                         @Preference(name = "device_token", type = String.class),
-                        // A Tailscale reusable pre-auth key, entered once during device setup
-                        // (parent generates it in the Tailscale admin console) - lets
-                        // TsnetClient join the tailnet non-interactively, with no browser OAuth
-                        // flow on the phone. See TsnetClient.kt.
-                        @Preference(name = "tailscale_auth_key", type = String.class),
                         @Preference(name = "enrolled", type = boolean.class, defaultValue = "false"),
                         @Preference(name = "kid_mode_policy", type = String.class),
                         // Current lock decision, persisted so LockActivity/HomeActivity can react

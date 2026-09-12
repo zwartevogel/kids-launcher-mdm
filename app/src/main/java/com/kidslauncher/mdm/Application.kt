@@ -168,14 +168,10 @@ class Application : android.app.Application() {
         if (LauncherPreferences.mdm().vpnFilterEnabled()) {
             KidVpnService.start(this)
         }
-        // The embedded tailnet connection deliberately does NOT kick off here - TsnetClient.connect
-        // runs tsnet's native Go/cgo runtime, a real crash surface (see that class's own doc
-        // comment on the GrapheneOS hardened_malloc risk and the prior real SIGABRT incident this
-        // app already hit once). Application.onCreate() is the earliest possible point in the
-        // process's life, racing the very first UI paint after unlock - a crash here has no chance
-        // to have shown anything yet. HomeActivity's first onResume() is the trigger instead, after
-        // the launcher itself has actually rendered; MdmSyncWorker's regular sync cycle is the
-        // retry-until-connected backstop either way, same as before.
+        // LOCAL-DEVIATION: upstream carefully kept its embedded-tailnet startup out of this method
+        // (tsnet's native Go/cgo runtime had a real SIGABRT history here, so it was deferred to
+        // HomeActivity's first onResume()). tsnet is removed in this fork, so that whole native
+        // crash surface - and the reasoning around where it was safe to touch - is gone.
     }
 
     fun getCustomAppNames(): HashMap<AbstractAppInfo, String> {

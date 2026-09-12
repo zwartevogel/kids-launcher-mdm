@@ -73,21 +73,19 @@ class CommandListenerService : Service() {
     private var stopped = false
 
     /**
-     * Built fresh on every [connect] call, not cached - the server is now only reachable over the
-     * embedded tailnet (see CLAUDE.md's on-device-filtering/embedded-tsnet migration: KidVpnService
-     * is the device's sole always-on VPN as of Phase D, so there's no more OS-level MagicDNS/routing
-     * from a standalone Tailscale app for a plain client to piggyback on), so this needs
-     * [TsnetClient]'s SOCKS5 proxy exactly like [createMdmApi] already uses - and a cached client
-     * built before that connects would stay proxy-less forever, the same staleness bug already once
-     * fixed in [TsnetClient.connect] itself. [connect] already retries via [scheduleReconnect] until
-     * this succeeds, so rebuilding here each time costs nothing extra.
+     * Built fresh on every [connect] call rather than cached.
+     *
+     * LOCAL-DEVIATION: upstream also attached the embedded tsnet SOCKS5 proxy here, which was the
+     * original reason this could not be a cached client. tsnet is removed in this fork (the server
+     * is reachable over the public internet), so this now only builds a plain client - kept
+     * per-call anyway, since [connect] retries via [scheduleReconnect] and rebuilding costs
+     * nothing.
      */
     private fun buildClient(): OkHttpClient {
         val builder = OkHttpClient.Builder()
             // SSE connections are meant to stay open indefinitely - a normal read timeout would
             // tear this down and force a reconnect every time it elapsed.
             .readTimeout(0, TimeUnit.MILLISECONDS)
-        TsnetClient.proxy()?.let { builder.proxy(it) }
         return builder.build()
     }
 

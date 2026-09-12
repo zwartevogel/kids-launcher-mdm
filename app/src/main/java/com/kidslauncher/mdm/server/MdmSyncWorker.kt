@@ -61,12 +61,9 @@ suspend fun performMdmSync(context: Context): Boolean = syncMutex.withLock {
         return false
     }
 
-    // The embedded tailnet connection (see CLAUDE.md) is kicked off eagerly from
-    // Application.onCreate() - this is a retry-until-connected backstop for whenever that hasn't
-    // succeeded yet (no auth key configured at startup, transient failure, ...), so createMdmApi
-    // below can pick up TsnetClient's SOCKS5 proxy. No-ops if already connected or no key is set.
-    TsnetClient.connectFromPreferences(context)
-
+    // LOCAL-DEVIATION: upstream kicked off a retry-until-connected embedded-tailnet connection here
+    // so createMdmApi could pick up tsnet's SOCKS5 proxy. tsnet is removed in this fork - the
+    // server is reached directly over the public internet.
     val api = createMdmApi(serverUrl, deviceToken)
     val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
     val admin = ComponentName(context, MdmDeviceAdminReceiver::class.java)

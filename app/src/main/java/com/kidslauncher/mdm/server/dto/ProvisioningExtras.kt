@@ -6,7 +6,12 @@ import org.json.JSONObject
 private const val KEY_ADMIN_EXTRAS_BUNDLE = "android.app.extra.PROVISIONING_ADMIN_EXTRAS_BUNDLE"
 
 /**
- * The three fields kid-phone-server embeds in every device's setup QR code, under
+ * LOCAL-DEVIATION: upstream carried a third field here, the Tailscale auth key. tsnet is removed in
+ * this fork, so that key is neither parsed nor stored - an older server still sending it in the QR
+ * payload is simply ignored, since both readers below pick out named keys rather than requiring an
+ * exact shape.
+ *
+ * The two fields kid-phone-server embeds in every device's setup QR code, under
  * PROVISIONING_ADMIN_EXTRAS_BUNDLE - see that repo's `handlers::provisioning` for the server
  * side. Read two different ways depending on how provisioning happened: [fromAdminExtrasBundle]
  * for Android's native zero-touch flow (delivered via
@@ -17,7 +22,6 @@ private const val KEY_ADMIN_EXTRAS_BUNDLE = "android.app.extra.PROVISIONING_ADMI
  */
 data class ProvisioningExtras(
     val serverUrl: String,
-    val tailscaleAuthKey: String,
     val enrollmentCode: String,
 ) {
     companion object {
@@ -28,7 +32,6 @@ data class ProvisioningExtras(
             if (serverUrl.isBlank() || enrollmentCode.isBlank()) return null
             return ProvisioningExtras(
                 serverUrl = serverUrl,
-                tailscaleAuthKey = bundle.getString("tailscale_auth_key").orEmpty(),
                 enrollmentCode = enrollmentCode,
             )
         }
@@ -53,7 +56,6 @@ data class ProvisioningExtras(
             if (serverUrl.isBlank() || enrollmentCode.isBlank()) return null
             return ProvisioningExtras(
                 serverUrl = serverUrl,
-                tailscaleAuthKey = extras.optString("tailscale_auth_key"),
                 enrollmentCode = enrollmentCode,
             )
         }

@@ -265,8 +265,7 @@ object AppEnforcer {
     /**
      * Sets Android's always-on-VPN requirement on the launcher's own package via
      * [DevicePolicyManager.setAlwaysOnVpnPackage] - [KidVpnService] is now the device's only VPN
-     * (the standalone Tailscale app and its managed-config/exit-node plumbing are retired; tsnet is
-     * embedded directly, see [TsnetClient], and doesn't register as a VpnService at all). This is
+     * (the standalone Tailscale app and its managed-config/exit-node plumbing are retired). This is
      * what makes Android auto-start/restart the service as needed, independent of anything this app
      * does itself.
      *

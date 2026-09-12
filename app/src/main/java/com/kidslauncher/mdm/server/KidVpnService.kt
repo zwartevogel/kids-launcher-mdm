@@ -42,8 +42,7 @@ private const val MTU = 32767
 
 /**
  * The launcher's on-device ad/content DNS filter - replaces the retired DoT-to-Pi Private DNS
- * approach (see CLAUDE.md) and the standalone Tailscale app's role in device-wide traffic (see
- * [TsnetClient] for the tailnet-management-traffic side, which this is unrelated to).
+ * approach (see CLAUDE.md) and the standalone Tailscale app's role in device-wide traffic.
  *
  * Architecture (adapted from DNS66's real implementation, not invented from scratch - see
  * CLAUDE.md): rather than capturing all device traffic (`0.0.0.0/0`), this advertises a single

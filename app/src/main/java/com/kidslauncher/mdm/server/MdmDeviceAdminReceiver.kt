@@ -53,7 +53,7 @@ class MdmDeviceAdminReceiver : DeviceAdminReceiver() {
         val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                applyProvisioningExtras(context, extras)
+                applyProvisioningExtras(extras)
                     .onSuccess { Log.i(LOG_TAG, "Auto-enrolled from provisioning QR") }
                     .onFailure { e -> Log.w(LOG_TAG, "Auto-enroll from provisioning QR failed", e) }
             } finally {

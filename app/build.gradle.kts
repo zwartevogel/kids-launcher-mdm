@@ -101,11 +101,6 @@ android {
 }
 
 dependencies {
-    // Built by CI (see .github/workflows/android.yml's "Build tsnet.aar with
-    // gomobile" step, and mobile/go.mod) - not checked in, since it's a
-    // multi-hundred-MB Go-toolchain build artifact. Gives the launcher its
-    // own embeddable tailnet connection - see CLAUDE.md.
-    implementation(files("libs/tsnet.aar"))
     // IP/UDP packet parsing+construction (with automatic checksum/length
     // correction) and DNS message parsing, for KidVpnService's local packet
     // filter - same libraries (and versions, for pcap4j) DNS66 uses for this
@@ -116,8 +111,8 @@ dependencies {
     implementation("org.pcap4j:pcap4j-packetfactory-static:1.8.2")
     implementation("dnsjava:dnsjava:3.6.5")
     // In-app "Scan setup QR" flow (SettingsFragmentLauncher) - ZXing, not Google's ML Kit, to
-    // match this project's existing avoid-Google/Play-Services-dependencies pattern (embedded
-    // tsnet over the standalone Tailscale app, UnifiedPush over FCM, etc.). Zero GMS footprint.
+    // match this project's existing avoid-Google/Play-Services-dependencies pattern (UnifiedPush
+    // over FCM, etc.). Zero GMS footprint.
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
     implementation(libs.androidx.activity)
     implementation(libs.androidx.activity.ktx)

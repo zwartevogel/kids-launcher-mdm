@@ -67,8 +67,9 @@ private data class NtfyEnvelope(
  * not guessed) to consume exactly that envelope shape; anything without `encoding: "base64"` is
  * treated as plain UTF-8 text bytes.
  *
- * Deliberately does NOT go through [TsnetClient]'s SOCKS5 proxy - that exists to reach this
- * project's own kid-phone-server over the tailnet, not the public internet ntfy.sh lives on.
+ * LOCAL-DEVIATION: upstream noted here that this deliberately bypassed the embedded tailnet
+ * proxy, since ntfy.sh is on the public internet. tsnet is removed in this fork, so every network
+ * call in the app takes the normal path and there is no longer a distinction to make.
  */
 object UnifiedPushRelay {
     private val client = OkHttpClient.Builder()

@@ -23,10 +23,6 @@
         android:title="@string/settings_mdm_server_url" />
 
     <Preference
-        android:key="@string/settings_mdm_tailscale_auth_key_key"
-        android:title="@string/settings_mdm_tailscale_auth_key" />
-
-    <Preference
         android:key="settings_mdm_scan_setup_qr"
         android:title="@string/settings_mdm_scan_setup_qr"
         android:summary="@string/settings_mdm_scan_setup_qr_summary" />

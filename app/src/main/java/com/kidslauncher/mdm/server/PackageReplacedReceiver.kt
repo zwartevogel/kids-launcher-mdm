@@ -23,12 +23,10 @@ import com.kidslauncher.mdm.preferences.LauncherPreferences
  * default: this is a system broadcast the OS delivers directly to receivers in the updated app,
  * not something another app could send to trigger it.
  *
- * Deliberately does NOT touch [TsnetClient] here - see [Application.onCreate]'s own doc comment
- * on why that connection only ever starts from [HomeActivity]'s first `onResume()`, never from a
- * non-UI entry point, given tsnet's real native-crash history on this project. That means tailnet
- * reachability (and so kid-phone-server sync) still waits for the next actual unlock after an
- * update; only the tsnet-independent parts - most notably [UnifiedPushRelay], which deliberately
- * never goes through tsnet's proxy - come back immediately via this receiver.
+ * LOCAL-DEVIATION: upstream also documented here that this receiver deliberately never touched
+ * the embedded tailnet client, so sync reachability waited for the next real unlock after an
+ * update. tsnet is removed in this fork, so everything this receiver restarts is reachable
+ * immediately over the normal network.
  */
 class PackageReplacedReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {

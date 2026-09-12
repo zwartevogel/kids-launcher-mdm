@@ -33,7 +33,6 @@
       -
       -->
     <string name="settings_mdm_server_url_key" translatable="false">mdm.server_url</string>
-    <string name="settings_mdm_tailscale_auth_key_key" translatable="false">mdm.tailscale_auth_key</string>
     <string name="settings_mdm_dns_upstream_provider_key" translatable="false">mdm.dns_upstream_provider</string>
     <string name="settings_mdm_blocked_dns_event_queue_json_key" translatable="false">mdm.blocked_dns_event_queue_json</string>
     <string name="settings_mdm_vpn_filter_enabled_key" translatable="false">mdm.vpn_filter_enabled</string>
