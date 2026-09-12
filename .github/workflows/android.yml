@@ -24,6 +24,20 @@ jobs:
         distribution: 'temurin'
         cache: gradle
 
+    - name: Guard local deviation markers
+      # Every intentional divergence from upstream carries a marker comment. A rebase that
+      # silently drops one is the failure mode this guards against - see OPDRACHT.md's
+      # divergence policy. Counts app/ sources only; raise EXPECTED deliberately when a new
+      # divergence is added, and lower it only when one is genuinely retired.
+      run: |
+        EXPECTED=11
+        MARKER="LOCAL-$(echo DEVIATION):"
+        FOUND=$(grep -rIo "$MARKER" app | wc -l)
+        echo "Found $FOUND deviation markers in app/ (expected at least $EXPECTED)"
+        if [ "$FOUND" -lt "$EXPECTED" ]; then
+          echo "::error::Deviation markers dropped from $EXPECTED to $FOUND - a rebase probably discarded a local change. Review before merging."
+          exit 1
+        fi
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
     - name: Read Debug Keystore
