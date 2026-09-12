@@ -84,7 +84,15 @@ suspend fun performMdmSync(context: Context): Boolean = syncMutex.withLock {
         mdm.dnsUpstreamProvider(freshPolicy.dnsUpstreamProvider)
         // Only actually re-fetches the (potentially 100k+ domain) full list if the version token
         // changed - see DnsFilterEngine's doc comment.
-        DnsFilterEngine.refreshIfNeeded(context, api, freshPolicy.dnsFilterVersion)
+        //
+        // LOCAL-DEVIATION: upstream fetched this unconditionally. Only KidVpnService consumes the
+        // blocklist, and this deployment runs WireGuard into AdGuard Home instead (see
+        // OPDRACHT.md's conflict 1), so with the built-in filter off the device was downloading and
+        // storing a six-figure domain list it never consults. Gated on the same flag that decides
+        // whether the filter runs at all.
+        if (freshPolicy.vpnFilterEnabled) {
+            DnsFilterEngine.refreshIfNeeded(context, api, freshPolicy.dnsFilterVersion)
+        }
         // Only ever dispatched off a genuinely fresh fetch, never the cached fallback below - the
         // cached policy blob can still hold a `pendingCommand` from a past cycle that's already
         // been delivered and consumed server-side, and replaying it from cache while offline would
