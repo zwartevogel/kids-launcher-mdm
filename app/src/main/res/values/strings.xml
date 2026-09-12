@@ -158,9 +158,6 @@
     <string name="notification_channel_listener">Find My Device background connection</string>
     <string name="notification_listener_title">Kids Device MDM</string>
     <string name="notification_listener_text">Ready for parent commands (ring, lock, locate).</string>
-    <string name="notification_channel_vpn_filter">Content filter</string>
-    <string name="notification_vpn_filter_title">Content filter active</string>
-    <string name="notification_vpn_filter_text">Blocking ads and inappropriate content.</string>
     <string name="notification_channel_app_install">App installs and updates</string>
     <string name="notification_app_installing_title">Installing %1$s…</string>
     <string name="notification_app_install_failed_title">Couldn\'t install %1$s</string>

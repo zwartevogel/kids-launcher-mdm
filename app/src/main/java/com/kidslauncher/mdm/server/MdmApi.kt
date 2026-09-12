@@ -2,8 +2,6 @@ package com.kidslauncher.mdm.server
 
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 import com.kidslauncher.mdm.server.dto.CommandResultRequest
-import com.kidslauncher.mdm.server.dto.DnsBlocklistCategory
-import com.kidslauncher.mdm.server.dto.DnsEventReport
 import com.kidslauncher.mdm.server.dto.EnrollRequest
 import com.kidslauncher.mdm.server.dto.EnrollResponse
 import com.kidslauncher.mdm.server.dto.InstallProgressReport
@@ -60,14 +58,6 @@ interface MdmApi {
      * called on a throttled schedule during [downloadTrackedApp], not on every chunk. */
     @POST("api/devices/apps/progress")
     suspend fun reportInstallProgress(@Body report: InstallProgressReport): Response<Unit>
-
-    /** Only called when [PolicyResponse.dnsFilterVersion] differs from the last-fetched value -
-     * see [DnsFilterEngine] - since this can be a large (~100k+ domain) payload. */
-    @GET("api/devices/dns-blocklist")
-    suspend fun getDnsBlocklist(): Response<List<DnsBlocklistCategory>>
-
-    @POST("api/devices/dns-events")
-    suspend fun sendDnsEvents(@Body events: List<DnsEventReport>): Response<Unit>
 
     /** [url] is [TrackedAppUpdate.downloadUrl] as sent by the server (e.g.
      * "/api/devices/apps/5/download") - a per-app path, since there can be many tracked apps

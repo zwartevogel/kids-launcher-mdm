@@ -18,7 +18,7 @@ import com.kidslauncher.mdm.ui.HomeActivity
 private const val LOG_TAG = "AppEnforcer"
 
 /** LOCAL-DEVIATION: the VPN this household runs instead of the launcher's own DNS filter - see
- * [AppEnforcer.applyVpnRestrictions]. */
+ * [AppEnforcer.applyAlwaysOnVpn]. */
 private const val WIREGUARD_PACKAGE_NAME = "com.wireguard.android"
 
 /** applicationId of the kids-mdm-browser fork - see [AppEnforcer.applyBrowserPolicy]. */
@@ -162,17 +162,7 @@ object AppEnforcer {
 
         applyTamperRestrictions(dpm, admin, locked = !overrideActive)
 
-        // Same "fully open" treatment as everything else while an override is active - confirmed
-        // live this needs to include the VPN filter too: the whole point of the offline-override PIN
-        // and the pause-restrictions kill-switch is a guaranteed working, unblocked device when
-        // something's wrong, which can include the VPN/filter itself misbehaving. An earlier version
-        // of this deliberately excluded vpnFilterEnabled from that (reasoning: an emergency escape
-        // hatch for access restrictions shouldn't silently override a parent's separate content-
-        // filtering choice) - wrong in practice, reverted. Only true-by-default (filtering on) when
-        // no override is active AND no policy has ever been fetched, which has no admin choice yet
-        // to respect.
-        val vpnFilterEnabled = if (overrideActive) false else (policy?.vpnFilterEnabled ?: true)
-        applyVpnRestrictions(context, dpm, admin, vpnFilterEnabled)
+        applyAlwaysOnVpn(dpm, admin, context, locked = !overrideActive)
 
         applyPrivateDnsLock(dpm, admin)
 
@@ -309,95 +299,47 @@ object AppEnforcer {
     }
 
     /**
-     * Sets Android's always-on-VPN requirement on the launcher's own package via
-     * [DevicePolicyManager.setAlwaysOnVpnPackage] - [KidVpnService] is now the device's only VPN
-     * (the standalone Tailscale app and its managed-config/exit-node plumbing are retired). This is
-     * what makes Android auto-start/restart the service as needed, independent of anything this app
-     * does itself.
+     * LOCAL-DEVIATION: upstream pointed Android's always-on VPN at the launcher itself, to keep its
+     * own on-device DNS filter running. That filter is removed in this fork - DNS filtering
+     * happens in AdGuard Home, reached over the WireGuard tunnel (see OPDRACHT.md's conflict 1) -
+     * so the designation goes to WireGuard instead. Android allows exactly one VPN, and always-on
+     * is what makes the tunnel survive a kid tapping the toggle inside the WireGuard app: an app's
+     * own managed config only ever binds that app's own UI, as this project already found out with
+     * Tailscale's Quick Settings tile, whereas always-on is enforced by the connectivity stack.
      *
-     * Lockdown is deliberately NOT enabled here - unconditional, not gated on any policy field,
-     * because it's actively wrong for this VPN's design, not just risky. Confirmed live: with
-     * lockdown on, once this VPN becomes the system default network, `dumpsys connectivity` showed
-     * its routes as only the one fake-DNS-server address plus an explicit `::/0 unreachable` -
-     * [KidVpnService] deliberately never adds a general/default route (see that class's doc comment
-     * on why: it's what makes the "everything else flows over the real network untouched" design
-     * work at all when NOT locked down). Lockdown forces every app's traffic onto this network
-     * regardless of what routes it declares, so with no default route to fall back to, general
-     * internet connectivity broke device-wide - not a hypothetical, reproduced on the very first
-     * live test of this code. This is the exact same failure mode as the old
-     * Tailscale-without-an-exit-node bug (github.com/tailscale/tailscale#12925) that motivated
-     * gating lockdown on an exit node being configured for that VPN - except here there's no
-     * equivalent "configure a broader route" escape hatch to gate on, since narrow routing is
-     * permanent by design, not a transient unconfigured state. Without lockdown, Android's
-     * always-on designation still auto-restarts the service and still blocks a kid from disabling
-     * it via Settings (both Device-Owner-enforced); the only thing lost is that DNS briefly goes
-     * unfiltered through the OS's normal path if the service is ever down, which is an acceptable
-     * gap next to bricking the device's entire network.
+     * Lockdown stays OFF deliberately. It forces *all* traffic through the tunnel, and this
+     * deployment keeps the local subnet outside it so the phone stays reachable on the LAN for
+     * management. Without lockdown, Android still auto-starts/restarts the VPN and still blocks
+     * disabling it from Settings.
      *
-     * [vpnFilterEnabled] is [PolicyResponse.vpnFilterEnabled] - a per-device admin toggle for the
-     * filter itself (independent of the lockdown discussion above). When off, both the always-on
-     * designation and the running service are torn down; when on, both are (re)established. Also
-     * caches the value so [com.kidslauncher.mdm.Application.onCreate]'s cold-start
-     * [KidVpnService.start] call - which runs before any policy has ever been fetched - knows
-     * whether to start the service at all, rather than always starting and then immediately
-     * stopping it again once this function runs on the first sync.
+     * Released together with every other restriction while an override is active - the whole point
+     * of the offline-override PIN and the pause-restrictions kill-switch is a device that
+     * definitely works when something is wrong, which can include the tunnel itself.
      */
-    private fun applyVpnRestrictions(
-        context: Context,
+    private fun applyAlwaysOnVpn(
         dpm: DevicePolicyManager,
         admin: ComponentName,
-        vpnFilterEnabled: Boolean,
+        context: Context,
+        locked: Boolean,
     ) {
-        LauncherPreferences.mdm().vpnFilterEnabled(vpnFilterEnabled)
         try {
-            if (vpnFilterEnabled) {
-                dpm.setAlwaysOnVpnPackage(admin, context.packageName, false)
-                KidVpnService.start(context)
-            } else {
-                // LOCAL-DEVIATION: upstream cleared the always-on designation unconditionally here.
-                // With the built-in filter off, this household runs WireGuard instead (one VPN at a
-                // time - see OPDRACHT.md's conflict 1), and the tunnel is what carries DNS to
-                // AdGuard, so it has to survive a kid tapping the toggle inside the WireGuard app.
-                // An app's own managed-config only ever binds that app's UI (this project learned
-                // that the hard way with Tailscale's QS tile); always-on is enforced by the
-                // connectivity stack itself, independent of the app's cooperation.
-                //
-                // Lockdown stays OFF deliberately: it forces *all* traffic through the tunnel, and
-                // this deployment keeps the local subnet outside it so the phone stays reachable on
-                // the LAN for management. Without lockdown, Android still auto-starts/restarts the
-                // service and still blocks disabling it from Settings.
-                KidVpnService.stop(context)
-                val wireguardInstalled = try {
-                    context.packageManager.getPackageInfo(WIREGUARD_PACKAGE_NAME, 0)
-                    true
-                } catch (e: PackageManager.NameNotFoundException) {
-                    false
-                }
-                when {
-                    wireguardInstalled ->
-                        dpm.setAlwaysOnVpnPackage(admin, WIREGUARD_PACKAGE_NAME, false)
-                    dpm.getAlwaysOnVpnPackage(admin) == context.packageName ->
-                        dpm.setAlwaysOnVpnPackage(admin, null, false)
-                }
+            val wireguardInstalled = try {
+                context.packageManager.getPackageInfo(WIREGUARD_PACKAGE_NAME, 0)
+                true
+            } catch (e: PackageManager.NameNotFoundException) {
+                false
+            }
+            when {
+                locked && wireguardInstalled ->
+                    dpm.setAlwaysOnVpnPackage(admin, WIREGUARD_PACKAGE_NAME, false)
+                dpm.getAlwaysOnVpnPackage(admin) != null ->
+                    dpm.setAlwaysOnVpnPackage(admin, null, false)
             }
         } catch (e: Exception) {
-            Log.w(LOG_TAG, "Failed to apply VPN filter enabled state", e)
+            Log.w(LOG_TAG, "Failed to apply always-on VPN designation", e)
         }
     }
 
-    /**
-     * Locks Android's system-wide Private DNS to Opportunistic (never a specific host - the retired
-     * DoT-to-Pi approach's `setGlobalPrivateDnsModeSpecifiedHost` call lived here previously, see
-     * this repo's CLAUDE.md) and prevents it being switched away via
-     * [UserManager.DISALLOW_CONFIG_PRIVATE_DNS]. Unconditional on every `apply()` call, not gated on
-     * any policy field - closes the one gap [KidVpnService]'s DNS filtering can't otherwise cover on
-     * its own: a kid manually switching Private DNS to Strict mode against some other resolver would
-     * produce encrypted DoT traffic on port 853 that this app can't inspect, silently bypassing
-     * filtering entirely. Opportunistic mode, by contrast, only *attempts* DoT and transparently
-     * falls back to plain port-53 DNS if that fails - which is exactly what happens against
-     * [KidVpnService]'s own fake DNS server, since it deliberately doesn't answer on port 853 (see
-     * that class's doc comment on why it must stay DoT-silent for this to work).
-     */
     private fun applyPrivateDnsLock(
         dpm: DevicePolicyManager,
         admin: ComponentName,
@@ -446,8 +388,8 @@ object AppEnforcer {
      * the browser isn't installed (`NameNotFoundException`) - safe to call unconditionally on
      * every [apply] cycle, same tolerance pattern as every other per-package call in this file.
      *
-     * Scope is deliberately narrow: DNS-based blocking is handled elsewhere (KidVpnService's
-     * on-device filter / the server's DNS blocklist), so this only closes the browser-side gaps
+     * Scope is deliberately narrow: DNS-based blocking is handled elsewhere (AdGuard Home, over
+     * the WireGuard tunnel), so this only closes the browser-side gaps
      * that would otherwise route around it - Secure DNS (would bypass the DNS filter entirely),
      * Incognito/Guest mode, developer tools and extension installs
      * (both plausible tamper vectors on a kid's device), and the browser's own proxy settings

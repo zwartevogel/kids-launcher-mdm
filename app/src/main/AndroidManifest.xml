@@ -52,13 +52,6 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
-    <!-- KidVpnService's on-device DNS filter (see CLAUDE.md) - "specialUse" since none of the
-         other API 34 foreground-service types fit "local VPN packet filter"; the required
-         PROPERTY_SPECIAL_USE_FGS_SUBTYPE declaration is on the <service> element below.
-         BIND_VPN_SERVICE itself is a system-enforced permission that goes on the <service>
-         element's android:permission attribute (restricting who may bind to it, i.e. only the
-         OS) - not something this app requests for its own use, so no <uses-permission> for it. -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
     <application
         android:name=".Application"
@@ -194,20 +187,5 @@
             </intent-filter>
         </receiver>
 
-        <!-- On-device DNS filter - see KidVpnService.kt and this repo's CLAUDE.md. Only the OS may
-             bind to a VpnService, enforced via BIND_VPN_SERVICE here (not a <uses-permission> -
-             see the manifest permission block above). -->
-        <service
-            android:name=".server.KidVpnService"
-            android:exported="false"
-            android:permission="android.permission.BIND_VPN_SERVICE"
-            android:foregroundServiceType="specialUse">
-            <intent-filter>
-                <action android:name="android.net.VpnService" />
-            </intent-filter>
-            <property
-                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Local ad/content DNS filtering VPN" />
-        </service>
     </application>
 </manifest>

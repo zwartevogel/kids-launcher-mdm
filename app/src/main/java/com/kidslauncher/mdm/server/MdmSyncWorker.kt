@@ -79,20 +79,6 @@ suspend fun performMdmSync(context: Context): Boolean = syncMutex.withLock {
         // with zero network at all, which is the entire point of the offline failsafe.
         mdm.overridePinHash(freshPolicy.overridePinHash)
         mdm.overridePinSalt(freshPolicy.overridePinSalt)
-        // KidVpnService reads this cached value directly (it never talks to the network itself for
-        // policy) - see DnsFilterEngine.resolveUpstream.
-        mdm.dnsUpstreamProvider(freshPolicy.dnsUpstreamProvider)
-        // Only actually re-fetches the (potentially 100k+ domain) full list if the version token
-        // changed - see DnsFilterEngine's doc comment.
-        //
-        // LOCAL-DEVIATION: upstream fetched this unconditionally. Only KidVpnService consumes the
-        // blocklist, and this deployment runs WireGuard into AdGuard Home instead (see
-        // OPDRACHT.md's conflict 1), so with the built-in filter off the device was downloading and
-        // storing a six-figure domain list it never consults. Gated on the same flag that decides
-        // whether the filter runs at all.
-        if (freshPolicy.vpnFilterEnabled) {
-            DnsFilterEngine.refreshIfNeeded(context, api, freshPolicy.dnsFilterVersion)
-        }
         // Only ever dispatched off a genuinely fresh fetch, never the cached fallback below - the
         // cached policy blob can still hold a `pendingCommand` from a past cycle that's already
         // been delivered and consumed server-side, and replaying it from cache while offline would
@@ -141,24 +127,10 @@ suspend fun performMdmSync(context: Context): Boolean = syncMutex.withLock {
     }
 
     checkForTrackedAppUpdates(context, api)
-    reportBlockedDnsEvents(context, api)
 
     return freshPolicy != null
 }
 
-/** Drains whatever [KidVpnService] has queued via [BlockedEventLog] since the last successful
- * report - best-effort, same as the status report above; only clears the queue once the server
- * call actually succeeds, so a failed report doesn't silently lose events. */
-private suspend fun reportBlockedDnsEvents(context: Context, api: MdmApi) {
-    val events = BlockedEventLog.drain(context)
-    if (events.isEmpty()) return
-    try {
-        api.sendDnsEvents(events)
-        BlockedEventLog.clearReported(context, events.size)
-    } catch (e: Exception) {
-        Log.w(LOG_TAG, "Blocked-DNS-event report failed", e)
-    }
-}
 
 /**
  * Find My Device's remote-command dispatch - ring/stop_ring/lock/wipe, or `locate` (a no-op here;
@@ -237,7 +209,7 @@ private suspend fun currentLocationReport(
  * self-update, which is why it's always processed last (see the reordering below): installing an
  * update over the running app can get this process SIGKILLed the moment [AppInstaller] commits
  * that session, and everything after that point in this function (any other app still queued in
- * this loop, [reportBlockedDnsEvents] back in [performMdmSync]) would simply never run this cycle.
+ * this loop) would simply never run this cycle.
  * A committed [android.content.pm.PackageInstaller] session is handled by the OS from that point
  * on regardless of whether this process survives, so every other app's install is safe to have
  * already been kicked off first - it isn't reverted just because we don't stick around to see the

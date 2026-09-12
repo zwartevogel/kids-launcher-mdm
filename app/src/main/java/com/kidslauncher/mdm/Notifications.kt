@@ -23,8 +23,6 @@ val NOTIFICATION_CHANNEL_RING = "launcher:ring"
 const val RING_NOTIFICATION_ID = 1001
 val NOTIFICATION_CHANNEL_LISTENER = "launcher:command_listener"
 const val COMMAND_LISTENER_NOTIFICATION_ID = 1002
-val NOTIFICATION_CHANNEL_VPN_FILTER = "launcher:vpn_filter"
-const val VPN_FILTER_NOTIFICATION_ID = 1003
 val NOTIFICATION_CHANNEL_APP_INSTALL = "launcher:app_install"
 private const val APP_INSTALL_NOTIFICATION_ID_BASE = 2000
 
@@ -59,16 +57,6 @@ fun createNotificationChannels(context: Context) {
             NotificationChannel(
                 NOTIFICATION_CHANNEL_LISTENER,
                 context.getString(R.string.notification_channel_listener),
-                NotificationManager.IMPORTANCE_MIN
-            )
-        )
-        // MIN importance, silent - same reasoning as the listener channel above: this is the
-        // mandatory persistent notification for KidVpnService's foreground service, not something
-        // meant to draw attention.
-        notificationManager.createNotificationChannel(
-            NotificationChannel(
-                NOTIFICATION_CHANNEL_VPN_FILTER,
-                context.getString(R.string.notification_channel_vpn_filter),
                 NotificationManager.IMPORTANCE_MIN
             )
         )

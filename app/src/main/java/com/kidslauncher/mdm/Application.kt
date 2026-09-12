@@ -17,7 +17,6 @@ import com.kidslauncher.mdm.apps.AbstractAppInfo
 import com.kidslauncher.mdm.apps.AbstractDetailedAppInfo
 import com.kidslauncher.mdm.server.AppEnforcer
 import com.kidslauncher.mdm.server.CommandListenerService
-import com.kidslauncher.mdm.server.KidVpnService
 import com.kidslauncher.mdm.preferences.LauncherPreferences
 import com.kidslauncher.mdm.preferences.migratePreferencesToNewVersion
 import com.kidslauncher.mdm.preferences.resetPreferences
@@ -158,16 +157,9 @@ class Application : android.app.Application() {
         // separate WorkManager-based schedule() call here.
         CommandListenerService.start(this)
 
-        // The on-device DNS filter is the device's baseline network path now, not an
-        // admin-configurable feature - see CLAUDE.md's on-device-filtering migration writeup.
-        // Fails soft if not ready yet (no VPN consent granted) and gets retried via Android's own
-        // always-on-VPN management once AppEnforcer.apply grants consent - see KidVpnService's own
-        // doc comment. Gated on the cached vpnFilterEnabled preference (PolicyResponse.vpnFilterEnabled,
-        // see AppEnforcer.applyVpnRestrictions) so a device a parent has turned filtering off for
-        // doesn't flash it back on for a moment on every launch before the first sync corrects it.
-        if (LauncherPreferences.mdm().vpnFilterEnabled()) {
-            KidVpnService.start(this)
-        }
+        // LOCAL-DEVIATION: upstream started its own KidVpnService DNS filter here. That filter
+        // is removed in this fork - DNS filtering happens in AdGuard Home over the WireGuard
+        // tunnel - so there is no VPN for this app to start.
         // LOCAL-DEVIATION: upstream carefully kept its embedded-tailnet startup out of this method
         // (tsnet's native Go/cgo runtime had a real SIGABRT history here, so it was deferred to
         // HomeActivity's first onResume()). tsnet is removed in this fork, so that whole native

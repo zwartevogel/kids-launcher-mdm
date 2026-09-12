@@ -17,14 +17,6 @@ import kotlinx.serialization.Serializable
  * [com.kidslauncher.mdm.ui.quickcontrols.QuickControlsActivity].
  * [pendingCommand] is Find My Device's remote-command queue (ring/lock/wipe) - see
  * [com.kidslauncher.mdm.server.LocateCommands] and [MdmSyncWorker]'s dispatch of it.
- * [dnsFilterVersion]/[dnsUpstreamProvider] are the on-device DNS filtering fields - see
- * [com.kidslauncher.mdm.server.DnsFilterEngine]. The standalone-Tailscale-app fields
- * (`requireTailscale`/`tailscaleExitNodeId`) and the DoT-to-Pi Private DNS field
- * (`forcePrivateDnsToPi`) that used to live here are gone along with the code that read them - see
- * this repo's CLAUDE.md for the on-device-filtering/embedded-tsnet migration this was part of.
- * [vpnFilterEnabled] is a per-device admin toggle for [com.kidslauncher.mdm.server.KidVpnService]
- * itself (not a blocklist/domain setting) - see [com.kidslauncher.mdm.server.AppEnforcer.applyVpnRestrictions].
- * Defaults true; a parent can turn off ad/content filtering for a specific kid's device entirely.
  * [packagesToUninstall] are packages the admin unchecked in the "Apps to install" list while they
  * were still on the device - [MdmSyncWorker] uninstalls each silently (Device Owner privilege, no
  * confirmation dialog) on every sync where this is non-empty; the server clears an entry once a
@@ -45,8 +37,5 @@ data class PolicyResponse(
     val overridePinSalt: String? = null,
     val quickControlsMask: Long = 0,
     val pendingCommand: PendingCommand? = null,
-    val vpnFilterEnabled: Boolean = true,
-    val dnsFilterVersion: String? = null,
-    val dnsUpstreamProvider: String = "cloudflare",
     val packagesToUninstall: List<String> = emptyList(),
 )

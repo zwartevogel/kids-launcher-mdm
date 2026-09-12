@@ -94,26 +94,11 @@ import eu.jonahbauer.android.preference.annotations.Preferences;
                         // even the passive getLastKnownLocation() read triggers the location-in-use
                         // indicator, not just an active fetch.
                         @Preference(name = "cached_location_json", type = String.class),
-                        // Admin-configured public DoT upstream ("cloudflare" | "quad9") for
-                        // KidVpnService's on-device filter - cached from the last successful
-                        // policy sync (PolicyResponse.dnsUpstreamProvider) so the VPN service can
-                        // read it without needing to touch the network itself.
-                        @Preference(name = "dns_upstream_provider", type = String.class, defaultValue = "\"cloudflare\""),
-                        // BlockedEventLog's own persisted queue - see that class. Separate from
-                        // tracked_app_update_state/cached_location_json above since it's a list,
-                        // not a single blob, and gets drained (not just replaced) each sync.
-                        @Preference(name = "blocked_dns_event_queue_json", type = String.class),
-                        // Cached from the last successful policy sync (PolicyResponse.vpnFilterEnabled)
-                        // so Application.onCreate's cold-start KidVpnService.start call - which runs
-                        // before any policy has ever been fetched - knows whether to start the service
-                        // at all. See AppEnforcer.applyVpnRestrictions, the only writer.
-                        @Preference(name = "vpn_filter_enabled", type = boolean.class, defaultValue = "true"),
                         // Off by default - a parent has to explicitly opt in from Settings before
                         // this app starts advertising itself as a UnifiedPush distributor at all
                         // (see server.UnifiedPushRegistrationReceiver, enabled/disabled at runtime
-                        // via PackageManager.setComponentEnabledSetting). Mirrors vpn_filter_enabled's
-                        // "cached so a cold start before any Settings interaction knows what to do"
-                        // shape, even though this one's purely local (no server-side equivalent).
+                        // via PackageManager.setComponentEnabledSetting). Purely local - there is
+                        // no server-side equivalent.
                         @Preference(name = "unifiedpush_distributor_enabled", type = boolean.class, defaultValue = "false"),
                         // JSON blob: token -> {packageName, topic} for every app currently registered
                         // with this distributor (see server.UnifiedPushRelay) - same "small JSON blob

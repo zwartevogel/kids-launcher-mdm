@@ -129,8 +129,7 @@ class SettingsFragmentLauncher : PreferenceFragmentCompat() {
             // The posted block itself must stay tiny and hand off to a background coroutine
             // rather than call AppEnforcer.apply() directly - confirmed live this froze the UI
             // thread for several seconds and triggered an ANR/force-close once apply() started
-            // (re)starting KidVpnService, whose onCreate() does a synchronous disk read
-            // (DnsFilterEngine.loadFromDisk) that's too slow for the main thread. AppEnforcer.apply()
+            // doing real Binder work. AppEnforcer.apply()
             // was never actually cheap either (a DevicePolicyManager Binder call per changed
             // package), it just hadn't been reached by a slow enough operation to notice before.
             val context = requireContext()
