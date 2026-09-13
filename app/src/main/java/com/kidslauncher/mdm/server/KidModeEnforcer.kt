@@ -58,7 +58,7 @@ object KidModeEnforcer {
      */
     fun isAppAllowedNow(rule: AppRule?, policy: PolicyResponse, now: Calendar): Boolean {
         when (rule?.tier) {
-            "never" -> return false
+            AppRule.TIER_NEVER -> return false
             "always" -> return true
         }
 

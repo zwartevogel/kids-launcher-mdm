@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.UserManager
 import android.util.Log
+import com.kidslauncher.mdm.server.dto.AppRule
 import com.kidslauncher.mdm.server.dto.PolicyResponse
 import com.kidslauncher.mdm.preferences.LauncherPreferences
 import com.kidslauncher.mdm.ui.HomeActivity
@@ -130,12 +131,33 @@ object AppEnforcer {
             if (packageName == ownPackage) continue
 
             val shouldBeSuspended = allowedPackages != null && packageName !in allowedPackages
+
+            // LOCAL-DEVIATION: hiding and suspending used to move together. They shouldn't.
+            // Hiding removes the icon from every launcher, and One UI Home does not reliably put
+            // it back when the app is unhidden again - confirmed live: an app allowed only from
+            // 20:00 showed up in this launcher inside its window but never returned to the
+            // Samsung home screen. An app that comes back every evening must therefore keep its
+            // icon; suspension alone already blocks launching it, and shows the kid a greyed-out
+            // icon rather than a hole where the app used to be, which is the friendlier signal.
+            //
+            // Hiding is kept for apps that are never coming back within this policy - off the
+            // allowlist entirely, or explicitly tiered "never". Those genuinely should not
+            // clutter the drawer, and the reappearance problem doesn't apply to them.
+            val shouldBeHidden = allowedPackages != null &&
+                (packageName !in configuredAllowlist.orEmpty() ||
+                    rulesByPackage[packageName]?.tier == AppRule.TIER_NEVER)
+
             val currentlySuspended = try {
                 pm.isPackageSuspended(packageName)
             } catch (e: PackageManager.NameNotFoundException) {
                 continue
             }
-            if (shouldBeSuspended == currentlySuspended) continue
+            val currentlyHidden = try {
+                dpm.isApplicationHidden(admin, packageName)
+            } catch (e: Exception) {
+                false
+            }
+            if (shouldBeSuspended == currentlySuspended && shouldBeHidden == currentlyHidden) continue
 
             try {
                 // Both calls can fail *without* throwing - setPackagesSuspended returns the
@@ -145,13 +167,24 @@ object AppEnforcer {
                 // that failure mode invisible - confirmed live with a carrier-privileged /product-
                 // partition system app that stayed reachable despite being correctly excluded
                 // from the allowlist, with nothing in logs to explain why.
-                val notSuspended = dpm.setPackagesSuspended(admin, arrayOf(packageName), shouldBeSuspended)
-                if (!notSuspended.isNullOrEmpty()) {
-                    Log.w(LOG_TAG, "Platform refused to ${if (shouldBeSuspended) "suspend" else "unsuspend"} $packageName (setPackagesSuspended)")
+                // Unhide before anything else, hide after everything else: a hidden package is
+                // unavailable to the point that setPackagesSuspended has nothing to act on, so
+                // the visible state has to exist before a suspension state is set on it.
+                if (!shouldBeHidden && currentlyHidden) {
+                    if (!dpm.setApplicationHidden(admin, packageName, false)) {
+                        Log.w(LOG_TAG, "Platform refused to unhide $packageName (setApplicationHidden)")
+                    }
                 }
-                val hiddenOk = dpm.setApplicationHidden(admin, packageName, shouldBeSuspended)
-                if (!hiddenOk) {
-                    Log.w(LOG_TAG, "Platform refused to ${if (shouldBeSuspended) "hide" else "unhide"} $packageName (setApplicationHidden)")
+                if (shouldBeSuspended != currentlySuspended) {
+                    val notSuspended = dpm.setPackagesSuspended(admin, arrayOf(packageName), shouldBeSuspended)
+                    if (!notSuspended.isNullOrEmpty()) {
+                        Log.w(LOG_TAG, "Platform refused to ${if (shouldBeSuspended) "suspend" else "unsuspend"} $packageName (setPackagesSuspended)")
+                    }
+                }
+                if (shouldBeHidden && !currentlyHidden) {
+                    if (!dpm.setApplicationHidden(admin, packageName, true)) {
+                        Log.w(LOG_TAG, "Platform refused to hide $packageName (setApplicationHidden)")
+                    }
                 }
             } catch (e: Exception) {
                 Log.w(

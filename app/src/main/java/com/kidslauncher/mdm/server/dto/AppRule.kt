@@ -21,4 +21,9 @@ data class AppRule(
     val tier: String = "window_only",
     val startMinutes: Int? = null,
     val endMinutes: Int? = null,
-)
+) {
+    companion object {
+        /** Allowed at no point in the day - the only tier that also hides the app's icon. */
+        const val TIER_NEVER = "never"
+    }
+}
