@@ -35,15 +35,21 @@ private const val PERIODIC_SYNC_INTERVAL_MS = 5 * 60 * 1000L
 
 /**
  * LOCAL-DEVIATION: how often today's screen-time counters are refreshed and the budget re-applied -
- * see [ScreenTimeTracker]. A minute is the resolution the enforcement actually has: a budget can be
- * overrun by at most this long before the apps go away. Polling harder buys nothing a kid or parent
- * would notice and costs battery all day.
+ * see [ScreenTimeTracker]. This interval *is* the enforcement resolution: a budget can be overrun
+ * by at most this long before the apps go away. Five minutes of slack on a two-hour budget is well
+ * inside what anyone would notice, and polling harder costs battery all day for nothing.
+ *
+ * Counting itself is not sampled, so a longer interval does not make the totals less accurate -
+ * every interval is reconstructed exactly from the event timestamps regardless of when we look.
+ *
+ * Matches PERIODIC_SYNC_INTERVAL_MS but stays a separate timer on purpose: this tick must keep
+ * working when the sync cannot reach the server at all, which is precisely when a budget matters.
  *
  * Android offers `UsageStatsManager.registerAppUsageObserver`, which is exactly this callback for
  * free - but it needs OBSERVE_APP_USAGE, held only by the app with ROLE_SYSTEM_WELLBEING. Without a
  * system app there is no way to get it, so polling it is.
  */
-private const val SCREEN_TIME_TICK_MS = 60 * 1000L
+private const val SCREEN_TIME_TICK_MS = 5 * 60 * 1000L
 
 /**
  * Holds a long-lived SSE connection open to `/api/devices/commands/stream` so Find My Device's
