@@ -14,6 +14,10 @@ import kotlinx.serialization.Serializable
  * [com.kidslauncher.mdm.server.KidModeEnforcer.isAppAllowedNow] for exactly what each covers.
  * [startMinutes]/[endMinutes] override the device's general window for this one app; null means
  * "use the general window for today".
+ *
+ * [dailyMinutes] is this app's own budget for the day, independent of the window: the window says
+ * when, this says for how long. Null means no budget of its own - only the device-wide budget and
+ * the window apply. See [com.kidslauncher.mdm.server.ScreenTimeTracker].
  */
 @Serializable
 data class AppRule(
@@ -21,6 +25,8 @@ data class AppRule(
     val tier: String = "window_only",
     val startMinutes: Int? = null,
     val endMinutes: Int? = null,
+    /** LOCAL-DEVIATION: this app's own daily budget in minutes; null for none. */
+    val dailyMinutes: Int? = null,
 ) {
     companion object {
         /** Allowed at no point in the day - the only tier that also hides the app's icon. */

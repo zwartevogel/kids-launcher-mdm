@@ -34,6 +34,18 @@ private const val NOT_ENROLLED_RETRY_DELAY_MS = 30_000L
 private const val PERIODIC_SYNC_INTERVAL_MS = 5 * 60 * 1000L
 
 /**
+ * LOCAL-DEVIATION: how often today's screen-time counters are refreshed and the budget re-applied -
+ * see [ScreenTimeTracker]. A minute is the resolution the enforcement actually has: a budget can be
+ * overrun by at most this long before the apps go away. Polling harder buys nothing a kid or parent
+ * would notice and costs battery all day.
+ *
+ * Android offers `UsageStatsManager.registerAppUsageObserver`, which is exactly this callback for
+ * free - but it needs OBSERVE_APP_USAGE, held only by the app with ROLE_SYSTEM_WELLBEING. Without a
+ * system app there is no way to get it, so polling it is.
+ */
+private const val SCREEN_TIME_TICK_MS = 60 * 1000L
+
+/**
  * Holds a long-lived SSE connection open to `/api/devices/commands/stream` so Find My Device's
  * ring/lock/stop-ring/wipe arrive in ~1s instead of waiting for the periodic sync below - a
  * supplement to it, not a replacement: every event received here is a content-free nudge, not the
@@ -97,6 +109,7 @@ class CommandListenerService : Service() {
         startForeground(COMMAND_LISTENER_NOTIFICATION_ID, buildNotification())
         connect()
         schedulePeriodicSync()
+        scheduleScreenTimeTick()
         // Piggybacks on this same foreground service/notification rather than running as a
         // second one - see UnifiedPushRelay's own doc comment for why. Off by default (a parent
         // has to opt in from Settings), so this is a no-op on a device where that's never been
@@ -181,6 +194,33 @@ class CommandListenerService : Service() {
                 schedulePeriodicSync()
             },
             PERIODIC_SYNC_INTERVAL_MS,
+        )
+    }
+
+    /**
+     * LOCAL-DEVIATION: the budget's own heartbeat. Runs here rather than as a WorkManager job for
+     * the same reason the periodic sync moved here - this service is already exempt from Doze,
+     * which a JobScheduler-backed worker is not, and a counter that stops counting while the screen
+     * is off would hand back the rest of the day for free.
+     *
+     * Re-applies against the *cached* policy, so it needs no network at all: the whole point of
+     * counting on the device is that a budget survives the server being unreachable.
+     */
+    private fun scheduleScreenTimeTick() {
+        if (stopped) return
+        handler.postDelayed(
+            {
+                scope.launch {
+                    try {
+                        ScreenTimeTracker.poll(applicationContext)
+                        AppEnforcer.apply(applicationContext, cachedPolicy())
+                    } catch (e: Exception) {
+                        Log.w(LOG_TAG, "Screen-time tick failed", e)
+                    }
+                }
+                scheduleScreenTimeTick()
+            },
+            SCREEN_TIME_TICK_MS,
         )
     }
 

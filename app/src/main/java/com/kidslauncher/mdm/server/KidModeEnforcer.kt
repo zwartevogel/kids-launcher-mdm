@@ -55,12 +55,34 @@ object KidModeEnforcer {
      * device's general window for that day; null means "use the general window". A missing rule
      * means `window_only` on the general window - the strict default, so a newly installed app is
      * never quietly looser than the ones already configured.
+     *
+     * [budget] adds the second half of the question. A window says *when* an app may be used; a
+     * budget says *for how long*, and both have to hold. It is resolved separately by
+     * [ScreenTimeTracker.budgetState] so this stays a pure function - pass
+     * [ScreenTimeTracker.BudgetState.UNRESTRICTED] where there is nothing to enforce.
+     *
+     * Deliberately one function with three inputs rather than a second enforcement path beside the
+     * schedule: two places independently deciding to suspend or unsuspend the same package end up
+     * undoing each other's work, and the resulting flapping is very hard to see from the outside.
      */
-    fun isAppAllowedNow(rule: AppRule?, policy: PolicyResponse, now: Calendar): Boolean {
+    fun isAppAllowedNow(
+        rule: AppRule?,
+        policy: PolicyResponse,
+        now: Calendar,
+        budget: ScreenTimeTracker.BudgetState = ScreenTimeTracker.BudgetState.UNRESTRICTED,
+    ): Boolean {
         when (rule?.tier) {
             AppRule.TIER_NEVER -> return false
+            // `always` outranks the budget as well as the clock. This tier is for the phone app,
+            // messages and anything else that must stay reachable no matter what - running out of
+            // screen time must never cost a kid the ability to call home.
             "always" -> return true
         }
+
+        // Budgets are checked before the windows: whichever is exhausted, the app is unavailable,
+        // and this ordering lets the caller tell the kid *why* without re-deriving it.
+        if (budget.deviceExhausted) return false
+        if (rule != null && rule.packageName in budget.exhaustedPackages) return false
 
         val minuteOfDay = now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE)
         if (isRestricted(minuteOfDay, policy.bedtimeStartMinutes, policy.bedtimeEndMinutes)) {

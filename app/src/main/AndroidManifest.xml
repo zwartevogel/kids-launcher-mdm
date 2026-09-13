@@ -3,6 +3,24 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
+    <!-- LOCAL-DEVIATION: reads Android's own local usage database to count today's screen time -
+         see server.ScreenTimeTracker. Nothing leaves the device; this is the same source Digital
+         Wellbeing and Samsung's screen-time UI read, so neither app has to be installed.
+
+         Declaring it is necessary but not sufficient: PACKAGE_USAGE_STATS is an appop, and a
+         Device Owner cannot grant it to itself (DevicePolicyManager has no path to it, and
+         `pm grant` refuses non-runtime permissions). Grant it once per install over adb:
+
+             adb shell appops set com.kidslauncher.mdm.debug android:get_usage_stats allow
+
+         Note the package name: CI publishes the debug build, which carries
+         applicationIdSuffix ".debug" - the command silently does nothing against the release id.
+         It survives reboots but not a reinstall or `pm clear`. Without it every budget silently
+         does not apply - deliberately the open direction, so a permission that quietly disappears
+         costs enforcement rather than locking the kid out of every app at once. -->
+    <uses-permission
+        android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions" />
     <!-- In-app "Scan setup QR" flow (SettingsFragmentLauncher, zxing-android-embedded) - Device
          Owner self-grants this the same way as other prompt-free permissions elsewhere in this
          file, so scanning never shows the runtime permission dialog. -->

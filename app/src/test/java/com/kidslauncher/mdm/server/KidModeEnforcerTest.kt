@@ -1,7 +1,10 @@
 package com.kidslauncher.mdm.server
 
+import com.kidslauncher.mdm.server.dto.AppRule
 import com.kidslauncher.mdm.server.dto.PolicyResponse
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.Calendar
 
@@ -119,6 +122,107 @@ class KidModeEnforcerTest {
         assertEquals(
             LockReason.NONE,
             KidModeEnforcer.evaluate(policy, calendarAt(Calendar.SATURDAY, 3, 0))
+        )
+    }
+
+    // LOCAL-DEVIATION: the budget as the third input beside the day window and the per-app window -
+    // see ScreenTimeTracker and migrations/0026_screen_time_budgets.sql on the server.
+
+    private val allDay = PolicyResponse(
+        weekdayStartMinutes = 0,
+        weekdayEndMinutes = 0, // start == end means "no window restriction"
+    )
+
+    @Test
+    fun `an exhausted device budget blocks an app that its window allows`() {
+        val budget = ScreenTimeTracker.BudgetState(
+            deviceExhausted = true,
+            exhaustedPackages = emptySet(),
+        )
+        assertFalse(
+            KidModeEnforcer.isAppAllowedNow(
+                AppRule("com.example.game"),
+                allDay,
+                calendarAt(Calendar.MONDAY, 14, 0),
+                budget,
+            )
+        )
+    }
+
+    @Test
+    fun `an exhausted device budget never blocks an always-on app`() {
+        val budget = ScreenTimeTracker.BudgetState(
+            deviceExhausted = true,
+            exhaustedPackages = setOf("com.example.phone"),
+        )
+        // Running out of screen time must never cost the ability to call home.
+        assertTrue(
+            KidModeEnforcer.isAppAllowedNow(
+                AppRule("com.example.phone", tier = "always"),
+                allDay,
+                calendarAt(Calendar.MONDAY, 14, 0),
+                budget,
+            )
+        )
+    }
+
+    @Test
+    fun `an exhausted per-app budget blocks only that app`() {
+        val budget = ScreenTimeTracker.BudgetState(
+            deviceExhausted = false,
+            exhaustedPackages = setOf("com.example.game"),
+        )
+        assertFalse(
+            KidModeEnforcer.isAppAllowedNow(
+                AppRule("com.example.game"),
+                allDay,
+                calendarAt(Calendar.MONDAY, 14, 0),
+                budget,
+            )
+        )
+        assertTrue(
+            KidModeEnforcer.isAppAllowedNow(
+                AppRule("com.example.book"),
+                allDay,
+                calendarAt(Calendar.MONDAY, 14, 0),
+                budget,
+            )
+        )
+    }
+
+    @Test
+    fun `an unrestricted budget leaves the window decision untouched`() {
+        val policy = PolicyResponse(
+            weekdayStartMinutes = 9 * 60,
+            weekdayEndMinutes = 19 * 60,
+        )
+        assertTrue(
+            KidModeEnforcer.isAppAllowedNow(
+                AppRule("com.example.game"),
+                policy,
+                calendarAt(Calendar.MONDAY, 14, 0),
+                ScreenTimeTracker.BudgetState.UNRESTRICTED,
+            )
+        )
+        assertFalse(
+            KidModeEnforcer.isAppAllowedNow(
+                AppRule("com.example.game"),
+                policy,
+                calendarAt(Calendar.MONDAY, 20, 0),
+                ScreenTimeTracker.BudgetState.UNRESTRICTED,
+            )
+        )
+    }
+
+    @Test
+    fun `a tier-never app stays blocked regardless of budget`() {
+        assertFalse(
+            KidModeEnforcer.isAppAllowedNow(
+                AppRule("com.example.thing", tier = AppRule.TIER_NEVER),
+                allDay,
+                calendarAt(Calendar.MONDAY, 14, 0),
+                ScreenTimeTracker.BudgetState.UNRESTRICTED,
+            )
         )
     }
 }

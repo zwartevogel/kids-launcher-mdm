@@ -48,4 +48,35 @@ data class PolicyResponse(
     val vpnLockdownEnabled: Boolean = false,
     val pendingCommand: PendingCommand? = null,
     val packagesToUninstall: List<String> = emptyList(),
+    /**
+     * LOCAL-DEVIATION: whole-device daily screen-time budget in minutes, already resolved by the
+     * server from the global default or this device's override. Null means no budget, which is
+     * also what an older server that does not send the field yields - the safe direction, since a
+     * missing field must never start blocking apps.
+     *
+     * Counted and enforced entirely on the device (see [com.kidslauncher.mdm.server.ScreenTimeTracker]),
+     * so it keeps working while the server is unreachable - which is exactly when a budget would
+     * otherwise be easiest to escape.
+     */
+    val dailyScreenMinutes: Int? = null,
+    /** LOCAL-DEVIATION: one-off additions to today's budget - see [TimeGrant]. */
+    val timeGrants: List<TimeGrant> = emptyList(),
+)
+
+/**
+ * LOCAL-DEVIATION: a one-off adjustment to one day's budget - "vandaag een half uur extra".
+ *
+ * Additive rather than a replacement, so the configured budget is untouched and tomorrow returns
+ * to normal on its own; [minutes] may be negative to shorten a day instead. [packageName] null
+ * scopes the grant to the whole device, otherwise to that one app's own budget. [day] is a
+ * `yyyy-MM-dd` date the device matches against its own local date - the server sends today's and
+ * yesterday's so a grant issued late in the evening still lands on a phone whose day has not
+ * rolled over yet.
+ */
+@Serializable
+data class TimeGrant(
+    val id: Long,
+    val day: String,
+    val packageName: String? = null,
+    val minutes: Int,
 )

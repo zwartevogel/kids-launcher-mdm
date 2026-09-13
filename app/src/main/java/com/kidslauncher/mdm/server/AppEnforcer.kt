@@ -114,12 +114,17 @@ object AppEnforcer {
         val configuredAllowlist = effectivePolicy?.allowlist?.takeIf { it.isNotEmpty() }?.toSet()
         val rulesByPackage = effectivePolicy?.appRules.orEmpty().associateBy { it.packageName }
         val now = java.util.Calendar.getInstance()
+        // LOCAL-DEVIATION: the third input to the same decision - see [ScreenTimeTracker]. Resolved
+        // once per apply() rather than per package, so every app in this pass sees one consistent
+        // answer about how much of today is left. An override lifts budgets along with everything
+        // else, which is why it reads effectivePolicy and not policy.
+        val budget = ScreenTimeTracker.budgetState(context, effectivePolicy, now)
         val allowedPackages = if (configuredAllowlist == null || effectivePolicy == null) {
             null
         } else {
             configuredAllowlist
                 .filterTo(mutableSetOf()) {
-                    KidModeEnforcer.isAppAllowedNow(rulesByPackage[it], effectivePolicy, now)
+                    KidModeEnforcer.isAppAllowedNow(rulesByPackage[it], effectivePolicy, now, budget)
                 }
         }
         val ownPackage = context.packageName

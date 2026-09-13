@@ -84,6 +84,11 @@ import eu.jonahbauer.android.preference.annotations.Preferences;
                         // an already-installed or already-failed release from being re-downloaded
                         // and re-attempted every 2-minute sync forever.
                         @Preference(name = "tracked_app_update_state", type = String.class),
+                        // LOCAL-DEVIATION: JSON blob of today's screen-time counters plus the event
+                        // cursor they were folded up to - see server.ScreenTimeTracker. Persisted
+                        // rather than recomputed because Android only keeps ~7 days of events and a
+                        // reboot must not hand the kid a fresh budget.
+                        @Preference(name = "screen_time_state", type = String.class),
                         // Throttles active location fixes (LocateCommands.currentLocation) - an
                         // active fetch shows Android's location-in-use indicator and visibly slows
                         // the sync it runs in, so it shouldn't fire on every single 2-minute/manual
