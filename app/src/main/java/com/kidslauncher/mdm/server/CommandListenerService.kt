@@ -4,11 +4,14 @@ import android.app.Notification
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.content.pm.ServiceInfo
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.kidslauncher.mdm.COMMAND_LISTENER_NOTIFICATION_ID
 import com.kidslauncher.mdm.NOTIFICATION_CHANNEL_LISTENER
@@ -82,6 +85,8 @@ private const val SCREEN_TIME_TICK_MS = 5 * 60 * 1000L
  */
 class CommandListenerService : Service() {
     private val scope = CoroutineScope(Dispatchers.IO + Job())
+    /** Last type actually claimed, so the promotion only logs when it genuinely changes. */
+    private var promotedWithLocation = false
     private val handler = Handler(Looper.getMainLooper())
     private var eventSource: EventSource? = null
     private var reconnectDelayMs = INITIAL_RECONNECT_DELAY_MS
@@ -112,7 +117,7 @@ class CommandListenerService : Service() {
         // shown unconditionally (even before enrollment completes) since Android crashes the app
         // if this doesn't happen in time; connect() below handles "not enrolled yet" on its own by
         // retrying rather than needing this to wait for that state first.
-        startForeground(COMMAND_LISTENER_NOTIFICATION_ID, buildNotification())
+        promoteForegroundType()
         connect()
         schedulePeriodicSync()
         scheduleScreenTimeTick()
@@ -136,6 +141,61 @@ class CommandListenerService : Service() {
         UnifiedPushRelay.stop()
         scope.cancel()
         super.onDestroy()
+    }
+
+    /**
+     * LOCAL-DEVIATION: (re)enters the foreground with the widest service type this app is
+     * currently *allowed* to claim.
+     *
+     * The sync that collects a location fix runs inside this service, and on API 34 a backgrounded
+     * app only reaches LocationManager through a foreground service of type `location`. Running as
+     * `dataSync` alone is why every provider returned null forever and `device_locations` stayed
+     * empty even after a forced fix.
+     *
+     * The type cannot simply be hardcoded: `startForeground` throws SecurityException when a
+     * declared type's permission is missing, and a foreground service that throws in onCreate is a
+     * boot loop - the exact failure mode this project has hit before. So the location type is
+     * claimed only while the permission is actually held, and this is called again on every
+     * periodic cycle, which is what lets the service pick the type up once Device-Owner self-grant
+     * has landed (on a fresh device the first sync happens after this service already started).
+     *
+     * Calling it repeatedly is cheap and idempotent: on an already-foreground service it updates
+     * the type and refreshes the same notification rather than starting anything new.
+     */
+    private fun promoteForegroundType() {
+        val hasLocation = ContextCompat.checkSelfPermission(
+            this,
+            android.Manifest.permission.ACCESS_FINE_LOCATION,
+        ) == PackageManager.PERMISSION_GRANTED
+
+        val type = if (hasLocation) {
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+        } else {
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+        }
+
+        try {
+            ServiceCompat.startForeground(
+                this,
+                COMMAND_LISTENER_NOTIFICATION_ID,
+                buildNotification(),
+                type,
+            )
+            if (hasLocation != promotedWithLocation) {
+                Log.i(LOG_TAG, "Foreground service type now ${if (hasLocation) "dataSync|location" else "dataSync"}")
+                promotedWithLocation = hasLocation
+            }
+        } catch (e: Exception) {
+            // Never let this kill the service: without the notification Android stops us anyway,
+            // but crashing out of onCreate would take the SSE connection, the periodic sync and the
+            // screen-time tick with it.
+            Log.w(LOG_TAG, "Could not enter foreground with type $type", e)
+            try {
+                startForeground(COMMAND_LISTENER_NOTIFICATION_ID, buildNotification())
+            } catch (inner: Exception) {
+                Log.e(LOG_TAG, "startForeground failed outright", inner)
+            }
+        }
     }
 
     private fun buildNotification(): Notification {
@@ -196,6 +256,9 @@ class CommandListenerService : Service() {
         if (stopped) return
         handler.postDelayed(
             {
+                // Picks up the location permission whenever Device-Owner self-grant lands, which
+                // on a fresh device is after this service has already started.
+                promoteForegroundType()
                 scope.launch { performMdmSync(applicationContext) }
                 schedulePeriodicSync()
             },

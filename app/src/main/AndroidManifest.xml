@@ -69,6 +69,20 @@
          correct fit for a long-lived server connection. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- LOCAL-DEVIATION: the sync that collects a location fix runs inside
+         CommandListenerService, and on API 34 a backgrounded app only reaches LocationManager
+         through a foreground service of type "location". With dataSync alone every provider
+         returns null forever with nothing logged - which is exactly what happened here: zero rows
+         in device_locations despite a `ring` command (which forces a fresh fix) being delivered
+         and acknowledged. The nulls were previously read as a passive/active-fix problem; the real
+         cause is one layer down.
+
+         The service declares both types, but promotes itself to the location one only while the
+         location permission is actually held - see CommandListenerService.foregroundServiceType().
+         Declaring it unconditionally would make startForeground throw SecurityException on a
+         device that has not self-granted location yet, and a foreground service that crashes in
+         onCreate is a boot loop. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
 
     <application
@@ -192,7 +206,7 @@
         <service
             android:name=".server.CommandListenerService"
             android:exported="false"
-            android:foregroundServiceType="dataSync" />
+            android:foregroundServiceType="dataSync|location" />
 
         <!-- Not externally reachable despite the implicit-action intent-filter - MY_PACKAGE_REPLACED
              is a protected system broadcast only the OS can send, always targeted at the just-updated
