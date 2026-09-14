@@ -22,6 +22,19 @@ private const val LOG_TAG = "AppEnforcer"
  * [AppEnforcer.applyAlwaysOnVpn]. */
 private const val WIREGUARD_PACKAGE_NAME = "com.wireguard.android"
 
+/**
+ * LOCAL-DEVIATION: the DoT resolver every lookup is pinned to while restrictions are on.
+ *
+ * Deliberately a hostname and not the pair of addresses it serves (94.140.14.15 / 94.140.15.16):
+ * Android's Private DNS is DNS-over-TLS, which authenticates the resolver against a certificate,
+ * so the platform takes a name and nothing else. This one is AdGuard's family-protection endpoint.
+ *
+ * Hardcoded on purpose, as a stopgap while the phone runs without the WireGuard tunnel that used
+ * to carry DNS to the household's own AdGuard. Moving it to a server-side setting is the obvious
+ * next step and is deliberately not done here.
+ */
+private const val PRIVATE_DNS_HOST = "family.adguard-dns.com"
+
 /** applicationId of the kids-mdm-browser fork - see [AppEnforcer.applyBrowserPolicy]. */
 private const val BROWSER_PACKAGE_NAME = "com.kidsmdm.browser"
 
@@ -223,11 +236,12 @@ object AppEnforcer {
             dpm,
             admin,
             context,
-            locked = !overrideActive,
-            lockdown = effectivePolicy?.vpnLockdownEnabled == true && !overrideActive,
+            // LOCAL-DEVIATION: one flag now drives the whole designation, not just lockdown - see
+            // applyAlwaysOnVpn. Unticking the box must actually stop the tunnel, reboots included.
+            vpnEnabled = effectivePolicy?.vpnLockdownEnabled == true && !overrideActive,
         )
 
-        applyPrivateDnsLock(dpm, admin)
+        applyPrivateDnsLock(dpm, admin, locked = !overrideActive)
 
         applySideloadRestriction(dpm, admin, blockSideloading = !overrideActive)
 
@@ -383,8 +397,7 @@ object AppEnforcer {
         dpm: DevicePolicyManager,
         admin: ComponentName,
         context: Context,
-        locked: Boolean,
-        lockdown: Boolean,
+        vpnEnabled: Boolean,
     ) {
         try {
             val wireguardInstalled = try {
@@ -404,9 +417,16 @@ object AppEnforcer {
             // only exempt packages: any range the profile excludes from AllowedIPs - the home
             // LAN in particular - becomes unreachable the moment lockdown engages. That is a
             // decision about the tunnel's configuration, so it belongs with the parent.
+            // LOCAL-DEVIATION: the flag used to control only the `lockdown` argument, so unticking
+            // it left the always-on *designation* in place - Android kept starting WireGuard and
+            // brought it back after every reboot, which is exactly not what "VPN off" means.
+            // Confirmed live: mAlwaysOnVpnPackage=com.wireguard.android with
+            // mAlwaysOnVpnLockdown=false while the box was unticked. Off now clears the
+            // designation outright; on still implies lockdown, since an always-on VPN the tunnel
+            // can be switched out from under is not worth the name.
             when {
-                locked && wireguardInstalled ->
-                    dpm.setAlwaysOnVpnPackage(admin, WIREGUARD_PACKAGE_NAME, lockdown)
+                vpnEnabled && wireguardInstalled ->
+                    dpm.setAlwaysOnVpnPackage(admin, WIREGUARD_PACKAGE_NAME, true)
                 dpm.getAlwaysOnVpnPackage(admin) != null ->
                     dpm.setAlwaysOnVpnPackage(admin, null, false)
             }
@@ -415,12 +435,45 @@ object AppEnforcer {
         }
     }
 
+    /**
+     * LOCAL-DEVIATION: pins DNS to [PRIVATE_DNS_HOST] over TLS instead of merely asking for
+     * opportunistic DoT. Opportunistic only means "use TLS if whatever resolver this network hands
+     * us happens to support it" - on mobile data that is the carrier's resolver, so it filters
+     * nothing. With the tunnel off there is otherwise no filtering at all.
+     *
+     * Falls back to opportunistic when the platform reports the host is not serving DoT rather
+     * than leaving a strict mode pointing at something unreachable: strict Private DNS fails
+     * closed, so a bad host means no name resolution at all - including to this app's own server,
+     * which would make the device unfixable remotely.
+     *
+     * Unlike the version this replaces, it is lifted by an offline override / the pause switch,
+     * per the standing rule documented on [applySideloadRestriction]: a parent holding the offline
+     * PIN must be able to reach past every restriction, and a DNS lock is emphatically one.
+     *
+     * Must not run on the main thread - the platform validates the host over the network before
+     * accepting it. Every caller reaches apply() from a background dispatcher.
+     */
     private fun applyPrivateDnsLock(
         dpm: DevicePolicyManager,
         admin: ComponentName,
+        locked: Boolean,
     ) {
         try {
-            dpm.setGlobalPrivateDnsModeOpportunistic(admin)
+            if (!locked) {
+                dpm.clearUserRestriction(admin, UserManager.DISALLOW_CONFIG_PRIVATE_DNS)
+                dpm.setGlobalPrivateDnsModeOpportunistic(admin)
+                return
+            }
+
+            val result = dpm.setGlobalPrivateDnsModeSpecifiedHost(admin, PRIVATE_DNS_HOST)
+            if (result != DevicePolicyManager.PRIVATE_DNS_SET_NO_ERROR) {
+                Log.w(
+                    LOG_TAG,
+                    "Platform refused Private DNS host $PRIVATE_DNS_HOST (code $result) - " +
+                        "falling back to opportunistic rather than failing DNS closed",
+                )
+                dpm.setGlobalPrivateDnsModeOpportunistic(admin)
+            }
             dpm.addUserRestriction(admin, UserManager.DISALLOW_CONFIG_PRIVATE_DNS)
         } catch (e: Exception) {
             Log.w(LOG_TAG, "Failed to apply Private DNS lock", e)
