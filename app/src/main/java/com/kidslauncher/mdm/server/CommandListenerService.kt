@@ -72,6 +72,14 @@ private const val SCREEN_TIME_TICK_MS = 2 * 60 * 1000L
 private const val WAKE_SYNC_MIN_GAP_MS = 60 * 1000L
 
 /**
+ * LOCAL-DEVIATION: shortest gap between two syncs triggered by the command stream reconnecting.
+ * A flaky network can reconnect over and over, and each sync costs a policy fetch and a status
+ * report; a minute still means a lost phone is checked for pending commands the moment it is
+ * genuinely back.
+ */
+private const val STREAM_RECONNECT_SYNC_MIN_GAP_MS = 60 * 1000L
+
+/**
  * Holds a long-lived SSE connection open to `/api/devices/commands/stream` so Find My Device's
  * ring/lock/stop-ring/wipe arrive in ~1s instead of waiting for the periodic sync below - a
  * supplement to it, not a replacement: every event received here is a content-free nudge, not the
@@ -112,6 +120,8 @@ class CommandListenerService : Service() {
     private var lastWakeSyncAt = 0L
     /** Whether the budget tick is currently armed - it only runs while the screen is on. */
     private var screenTimeTicking = false
+    /** `elapsedRealtime` of the last sync triggered by the stream reconnecting. */
+    private var lastStreamSyncAt = 0L
 
     /**
      * LOCAL-DEVIATION: syncs the moment the device wakes up.
@@ -332,6 +342,26 @@ class CommandListenerService : Service() {
                 override fun onOpen(eventSource: EventSource, response: Response) {
                     Log.i(LOG_TAG, "Command stream connected")
                     reconnectDelayMs = INITIAL_RECONNECT_DELAY_MS
+
+                    // LOCAL-DEVIATION: a nudge sent while this stream was down is simply lost -
+                    // the server does not replay it, it only marks the command delivered when the
+                    // device fetches policy. So a ring/lock/locate queued while the phone was off
+                    // the network used to wait for the next periodic sync, and that backstop is now
+                    // an hour rather than five minutes. Reconnecting is exactly the moment to go
+                    // and look, and it is also when a lost phone comes back within reach.
+                    //
+                    // Throttled, because a flaky network reconnects repeatedly and each sync costs
+                    // a policy fetch and a status report.
+                    val since = SystemClock.elapsedRealtime() - lastStreamSyncAt
+                    if (lastStreamSyncAt != 0L && since < STREAM_RECONNECT_SYNC_MIN_GAP_MS) return
+                    lastStreamSyncAt = SystemClock.elapsedRealtime()
+                    scope.launch {
+                        try {
+                            performMdmSync(applicationContext)
+                        } catch (e: Exception) {
+                            Log.w(LOG_TAG, "Sync after stream reconnect failed", e)
+                        }
+                    }
                 }
 
                 override fun onEvent(eventSource: EventSource, id: String?, type: String?, data: String) {
