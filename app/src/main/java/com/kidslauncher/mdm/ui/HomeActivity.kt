@@ -14,7 +14,15 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.kidslauncher.mdm.databinding.ActivityHomeBinding
 import com.kidslauncher.mdm.server.LockReason
+import com.kidslauncher.mdm.server.performMdmSync
 import com.kidslauncher.mdm.server.reevaluateLockReasonFromCache
+import androidx.lifecycle.lifecycleScope
+import com.kidslauncher.mdm.R
+import java.text.DateFormat
+import java.util.Date
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.kidslauncher.mdm.openAppsList
 import com.kidslauncher.mdm.preferences.LauncherPreferences
 import com.kidslauncher.mdm.requestNotificationPermission
@@ -72,6 +80,7 @@ class HomeActivity : UIObjectActivity() {
         // Initialise layout
         binding = ActivityHomeBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        binding.homeSyncButton.setOnClickListener { syncNow() }
 
         minimalistAdapter = MinimalistHomeAdapter(this)
         binding.homeMinimalistList.layoutManager = LinearLayoutManager(this)
@@ -162,8 +171,45 @@ class HomeActivity : UIObjectActivity() {
         refreshHandler.post(refreshRunnable)
     }
 
+    /**
+     * LOCAL-DEVIATION: the same child-accessible sync as on the lock screen, but reachable when
+     * nothing is blocked at all - which is most of the time, and is exactly when a child wants to
+     * check whether a promised change has landed rather than stare at a screen that says nothing.
+     *
+     * Safe to expose without the admin PIN: a sync only ever *fetches* policy, so the worst effect
+     * of pressing it is that a parent's rules apply sooner. [performMdmSync] serialises on its own
+     * mutex, so it cannot overlap with the periodic cycle.
+     */
+    private fun syncNow() {
+        binding.homeSyncButton.isEnabled = false
+        binding.homeLastSync.setText(R.string.lock_sync_checking)
+        lifecycleScope.launch {
+            val reached = withContext(Dispatchers.IO) { performMdmSync(applicationContext) }
+            binding.homeSyncButton.isEnabled = true
+            if (reached) {
+                updateLastSync()
+            } else {
+                binding.homeLastSync.setText(R.string.lock_sync_failed)
+            }
+        }
+    }
+
+    private fun updateLastSync() {
+        val at = LauncherPreferences.mdm().lastSyncAt()
+        binding.homeLastSync.text = if (at <= 0L) {
+            getString(R.string.lock_last_sync_never)
+        } else {
+            // Device locale and timezone - the clock a child actually reads.
+            getString(
+                R.string.lock_last_sync,
+                DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(at)),
+            )
+        }
+    }
+
     override fun onResume() {
         super.onResume()
+        updateLastSync()
         // LOCAL-DEVIATION: upstream started its embedded tsnet connection here (deliberately not
         // from Application.onCreate(), to avoid a native-crash surface racing the first UI paint).
         // tsnet is removed in this fork, so there is nothing to start and that whole crash surface

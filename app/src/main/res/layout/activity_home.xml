@@ -27,4 +27,39 @@
 
     </LinearLayout>
 
+    <!-- LOCAL-DEVIATION: a status line and a sync a child can use without the admin PIN. The
+         existing "Sync now" sits in Settings, behind that PIN, so after a parent granted extra
+         time there was no way to make the phone notice short of waiting out a cycle. Pinned to the
+         bottom rather than in the app list, so it never competes with what the launcher is for. -->
+    <LinearLayout
+        android:id="@+id/home_sync_bar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <TextView
+            android:id="@+id/home_last_sync"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textSize="13sp"
+            android:alpha="0.7" />
+
+        <Button
+            android:id="@+id/home_sync_button"
+            style="?android:attr/borderlessButtonStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/lock_sync_now" />
+
+    </LinearLayout>
+
 </androidx.constraintlayout.widget.ConstraintLayout>
