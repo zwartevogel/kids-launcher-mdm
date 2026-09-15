@@ -53,6 +53,27 @@ private val syncMutex = Mutex()
  * network contact happened, for callers like the "Sync now" button that want to tell the user
  * the truth about whether it worked.
  */
+/**
+ * LOCAL-DEVIATION: runs one step of a sync cycle in isolation.
+ *
+ * The steps below are independent of one another - fetching policy, dispatching a remote command,
+ * enforcing, arming the next boundary, reporting status, pulling app updates. Run as a plain
+ * sequence, any one of them throwing silently cancels every step after it, which is the same
+ * class of coupling that [EnforcementScheduler] exists to remove at the timer level. It mattered
+ * most for enforcement: a throw inside AppEnforcer.apply used to also skip arming the alarm, so a
+ * single bad cycle took the enforcement clock down with it until the next boot or screen-on.
+ *
+ * Failures are logged and swallowed on purpose. There is no caller that could do anything useful
+ * with them, and every step is retried on the next cycle anyway.
+ */
+private suspend fun step(name: String, block: suspend () -> Unit) {
+    try {
+        block()
+    } catch (e: Exception) {
+        Log.w(LOG_TAG, "Sync step '$name' failed, continuing", e)
+    }
+}
+
 suspend fun performMdmSync(context: Context): Boolean = syncMutex.withLock {
     val mdm = LauncherPreferences.mdm()
     val serverUrl = mdm.serverUrl()
@@ -83,12 +104,20 @@ suspend fun performMdmSync(context: Context): Boolean = syncMutex.withLock {
         // cached policy blob can still hold a `pendingCommand` from a past cycle that's already
         // been delivered and consumed server-side, and replaying it from cache while offline would
         // re-run an old command (harmless for ring, not for lock/wipe).
-        dispatchPendingCommand(context, api, dpm, admin, freshPolicy.pendingCommand)
+        // The server reported in, which is what "last synced" means to the child on the home and
+        // lock screens - recorded here rather than at the end so a later step failing cannot make
+        // a successful fetch look like a failed one.
+        mdm.lastSyncAt(System.currentTimeMillis())
+        step("pending command") {
+            dispatchPendingCommand(context, api, dpm, admin, freshPolicy.pendingCommand)
+        }
         // Same "only off a genuinely fresh fetch" reasoning as the pending-command dispatch above -
         // the server clears an entry once a status report confirms the package is gone, so acting
         // on a stale cached list while offline would just be redundant, not actively harmful, but
         // there's no reason to.
-        freshPolicy.packagesToUninstall.forEach { AppInstaller.uninstallSilently(context, it) }
+        step("uninstalls") {
+            freshPolicy.packagesToUninstall.forEach { AppInstaller.uninstallSilently(context, it) }
+        }
     }
     val policy = freshPolicy ?: mdm.kidModePolicy()?.let { decodeCachedPolicy(it) }
 
@@ -97,11 +126,13 @@ suspend fun performMdmSync(context: Context): Boolean = syncMutex.withLock {
     }
     mdm.lockReason(reason)
 
-    AppEnforcer.apply(context, policy)
+    step("enforcement") { AppEnforcer.apply(context, policy) }
 
     // LOCAL-DEVIATION: a fetched policy can move the next boundary (a changed window, a new per-app
-    // rule), so the alarm is re-armed from it here - see EnforcementScheduler.
-    EnforcementScheduler.schedule(context, policy)
+    // rule), so the alarm is re-armed from it here - see EnforcementScheduler. Deliberately its own
+    // step rather than sharing one with the enforcement above: if applying the policy fails, having
+    // the alarm armed is exactly what gets it retried at the next boundary instead of never.
+    step("schedule next boundary") { EnforcementScheduler.schedule(context, policy) }
 
     // A `ring`/`locate` command means the admin explicitly wants to know where the device is right
     // now, worth the cost of an active GPS/network fix - every other sync (the background chain,
@@ -130,14 +161,7 @@ suspend fun performMdmSync(context: Context): Boolean = syncMutex.withLock {
         Log.w(LOG_TAG, "Status report failed", e)
     }
 
-    checkForTrackedAppUpdates(context, api)
-
-    // LOCAL-DEVIATION: only a fetch that actually came back from the server counts - a cycle that
-    // fell back to the cached policy is not a sync, and showing it as one on the lock screen would
-    // tell a kid the phone is up to date when it is not.
-    if (freshPolicy != null) {
-        mdm.lastSyncAt(System.currentTimeMillis())
-    }
+    step("tracked app updates") { checkForTrackedAppUpdates(context, api) }
 
     return freshPolicy != null
 }
