@@ -220,6 +220,12 @@
             </intent-filter>
         </receiver>
 
+        <!-- LOCAL-DEVIATION: fires at the next moment the enforcement decision could change - see
+             server.EnforcementScheduler. Not exported: only our own PendingIntent targets it. -->
+        <receiver
+            android:name=".server.EnforcementAlarmReceiver"
+            android:exported="false" />
+
         <service
             android:name=".server.CommandListenerService"
             android:exported="false"

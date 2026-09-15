@@ -37,25 +37,30 @@ private const val LOG_TAG = "CommandListenerService"
 private const val INITIAL_RECONNECT_DELAY_MS = 5_000L
 private const val MAX_RECONNECT_DELAY_MS = 60_000L
 private const val NOT_ENROLLED_RETRY_DELAY_MS = 30_000L
-private const val PERIODIC_SYNC_INTERVAL_MS = 5 * 60 * 1000L
+// LOCAL-DEVIATION: an hour, not five minutes. This timer now only *fetches* policy - enforcement
+// runs on its own schedule (see EnforcementScheduler), so a late sync delays a changed rule rather
+// than suspending enforcement. The SSE nudge covers anything a parent wants applied right away,
+// and the child's own button covers the rest.
+private const val PERIODIC_SYNC_INTERVAL_MS = 60 * 60 * 1000L
 
 /**
- * LOCAL-DEVIATION: how often today's screen-time counters are refreshed and the budget re-applied -
- * see [ScreenTimeTracker]. This interval *is* the enforcement resolution: a budget can be overrun
- * by at most this long before the apps go away. Five minutes of slack on a two-hour budget is well
- * inside what anyone would notice, and polling harder costs battery all day for nothing.
+ * LOCAL-DEVIATION: how often the screen-time counters are folded up *while the screen is on* - see
+ * [ScreenTimeTracker]. This interval is the budget's enforcement resolution: a budget can be
+ * overrun by at most this long before the apps go away.
  *
- * Counting itself is not sampled, so a longer interval does not make the totals less accurate -
- * every interval is reconstructed exactly from the event timestamps regardless of when we look.
+ * It only runs with the screen on, because that is the only time screen time accrues. That removes
+ * the whole question of what a timer does in deep sleep: there is nothing to count, so the tick is
+ * stopped on SCREEN_OFF after one final fold-up and restarted on SCREEN_ON. Two minutes while
+ * actually in use is cheap and tight enough that no one notices the slack.
  *
- * Matches PERIODIC_SYNC_INTERVAL_MS but stays a separate timer on purpose: this tick must keep
- * working when the sync cannot reach the server at all, which is precisely when a budget matters.
+ * Counting is not sampled, so the interval does not affect accuracy - every interval is
+ * reconstructed exactly from the event timestamps whenever we happen to look.
  *
- * Android offers `UsageStatsManager.registerAppUsageObserver`, which is exactly this callback for
- * free - but it needs OBSERVE_APP_USAGE, held only by the app with ROLE_SYSTEM_WELLBEING. Without a
- * system app there is no way to get it, so polling it is.
+ * Android offers `UsageStatsManager.registerAppUsageObserver`, which is this callback for free -
+ * but it needs OBSERVE_APP_USAGE, held only by the app with ROLE_SYSTEM_WELLBEING. Without a system
+ * app there is no way to get it, so polling it is.
  */
-private const val SCREEN_TIME_TICK_MS = 5 * 60 * 1000L
+private const val SCREEN_TIME_TICK_MS = 2 * 60 * 1000L
 
 /**
  * LOCAL-DEVIATION: shortest gap between two wake-triggered syncs - see [wakeReceiver].
@@ -105,6 +110,8 @@ class CommandListenerService : Service() {
     private var stopped = false
     /** `elapsedRealtime` of the last wake-triggered sync - counts through sleep, unlike uptime. */
     private var lastWakeSyncAt = 0L
+    /** Whether the budget tick is currently armed - it only runs while the screen is on. */
+    private var screenTimeTicking = false
 
     /**
      * LOCAL-DEVIATION: syncs the moment the device wakes up.
@@ -125,17 +132,35 @@ class CommandListenerService : Service() {
      */
     private val wakeReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == Intent.ACTION_SCREEN_OFF) {
+                // One last fold-up so the interval that just ended is counted, then stop ticking:
+                // no screen, no screen time. Enforcement keeps its own alarm either way.
+                stopScreenTimeTick()
+                scope.launch {
+                    try {
+                        ScreenTimeTracker.poll(applicationContext)
+                    } catch (e: Exception) {
+                        Log.w(LOG_TAG, "Final screen-time fold-up failed", e)
+                    }
+                }
+                return
+            }
+
+            startScreenTimeTick()
+
             val since = SystemClock.elapsedRealtime() - lastWakeSyncAt
             if (lastWakeSyncAt != 0L && since < WAKE_SYNC_MIN_GAP_MS) return
             lastWakeSyncAt = SystemClock.elapsedRealtime()
 
-            Log.i(LOG_TAG, "Woke on ${intent?.action}, syncing")
+            Log.i(LOG_TAG, "Woke on ${intent?.action}, re-evaluating and syncing")
             scope.launch {
                 try {
-                    // Counters first: the tick that would normally fold these in has been frozen
-                    // for as long as the device slept, and the budget decision below reads them.
+                    // Enforcement first and unconditionally: it needs no network, and the counters
+                    // it reads have been frozen for as long as the device slept.
                     ScreenTimeTracker.poll(applicationContext)
-                    AppEnforcer.apply(applicationContext, cachedPolicy())
+                    val cached = cachedPolicy()
+                    AppEnforcer.apply(applicationContext, cached)
+                    EnforcementScheduler.schedule(applicationContext, cached)
                     performMdmSync(applicationContext)
                 } catch (e: Exception) {
                     Log.w(LOG_TAG, "Wake sync failed", e)
@@ -172,13 +197,20 @@ class CommandListenerService : Service() {
         promoteForegroundType()
         connect()
         schedulePeriodicSync()
-        scheduleScreenTimeTick()
+        // Enforcement gets its own alarm rather than riding this service's timer - see
+        // EnforcementScheduler. Armed here so a freshly started service always has one pending,
+        // and re-armed after every evaluation.
+        EnforcementScheduler.schedule(applicationContext, cachedPolicy())
+        // The screen is on if the service is being started by a user action; if not, the next
+        // SCREEN_ON arms it. Starting it here covers the boot case, where no SCREEN_ON follows.
+        startScreenTimeTick()
         ContextCompat.registerReceiver(
             this,
             wakeReceiver,
             IntentFilter().apply {
                 addAction(Intent.ACTION_SCREEN_ON)
                 addAction(Intent.ACTION_USER_PRESENT)
+                addAction(Intent.ACTION_SCREEN_OFF)
             },
             // Both are protected system broadcasts - nothing but the OS can send them, so the
             // receiver has no reason to be visible to other apps.
@@ -351,25 +383,50 @@ class CommandListenerService : Service() {
      * Re-applies against the *cached* policy, so it needs no network at all: the whole point of
      * counting on the device is that a budget survives the server being unreachable.
      */
-    private fun scheduleScreenTimeTick() {
-        if (stopped) return
-        handler.postDelayed(
-            {
+    /**
+     * LOCAL-DEVIATION: the budget's tick, alive only while the screen is on.
+     *
+     * Screen time only accrues while the screen is on, so there is nothing for this to do
+     * otherwise - and stopping it removes the deep-sleep question entirely instead of trying to
+     * work around it. [startScreenTimeTick] is idempotent, which matters because SCREEN_ON and
+     * USER_PRESENT both arrive for a single unlock.
+     *
+     * It re-applies against the *cached* policy, so it needs no network: the point of counting on
+     * the device is that a budget survives the server being unreachable.
+     */
+    private fun startScreenTimeTick() {
+        if (stopped || screenTimeTicking) return
+        screenTimeTicking = true
+        scheduleScreenTimeTick()
+    }
+
+    private fun stopScreenTimeTick() {
+        screenTimeTicking = false
+        handler.removeCallbacks(screenTimeRunnable)
+    }
+
+    private val screenTimeRunnable = Runnable {
+        // Re-armed in a finally: this chain is the only thing scheduling its own next run, so
+        // anything throwing here would silently stop budget enforcement until the next unlock.
+        try {
+            scope.launch {
                 try {
-                    scope.launch {
-                        try {
-                            ScreenTimeTracker.poll(applicationContext)
-                            AppEnforcer.apply(applicationContext, cachedPolicy())
-                        } catch (e: Exception) {
-                            Log.w(LOG_TAG, "Screen-time tick failed", e)
-                        }
-                    }
-                } finally {
-                    scheduleScreenTimeTick()
+                    ScreenTimeTracker.poll(applicationContext)
+                    val cached = cachedPolicy()
+                    AppEnforcer.apply(applicationContext, cached)
+                    EnforcementScheduler.schedule(applicationContext, cached)
+                } catch (e: Exception) {
+                    Log.w(LOG_TAG, "Screen-time tick failed", e)
                 }
-            },
-            SCREEN_TIME_TICK_MS,
-        )
+            }
+        } finally {
+            scheduleScreenTimeTick()
+        }
+    }
+
+    private fun scheduleScreenTimeTick() {
+        if (stopped || !screenTimeTicking) return
+        handler.postDelayed(screenTimeRunnable, SCREEN_TIME_TICK_MS)
     }
 
     private fun scheduleReconnect() {

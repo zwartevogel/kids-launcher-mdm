@@ -37,14 +37,16 @@ class BootReceiver : BroadcastReceiver() {
         // goAsync() is deliberately not used: the work below is not ordered against anything and a
         // receiver may only hold the broadcast open for ~10s, which a sync can exceed on a slow
         // network at boot. The service started above owns the retry either way.
+        // Alarms do not survive a reboot, so this is also the only thing that re-arms the
+        // enforcement boundary - see EnforcementScheduler.
+        EnforcementScheduler.evaluateNow(context)
+
         val appContext = context.applicationContext
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                ScreenTimeTracker.poll(appContext)
-                AppEnforcer.apply(appContext, cachedPolicy())
                 performMdmSync(appContext)
             } catch (e: Exception) {
-                Log.w(LOG_TAG, "Post-boot enforcement failed", e)
+                Log.w(LOG_TAG, "Post-boot sync failed", e)
             }
         }
     }

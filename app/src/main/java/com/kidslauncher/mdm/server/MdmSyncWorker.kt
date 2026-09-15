@@ -99,6 +99,10 @@ suspend fun performMdmSync(context: Context): Boolean = syncMutex.withLock {
 
     AppEnforcer.apply(context, policy)
 
+    // LOCAL-DEVIATION: a fetched policy can move the next boundary (a changed window, a new per-app
+    // rule), so the alarm is re-armed from it here - see EnforcementScheduler.
+    EnforcementScheduler.schedule(context, policy)
+
     // A `ring`/`locate` command means the admin explicitly wants to know where the device is right
     // now, worth the cost of an active GPS/network fix - every other sync (the background chain,
     // push-triggered syncs, and manual "Sync now") just reads whatever's cached/throttled instead,
