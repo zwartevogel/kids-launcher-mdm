@@ -2,13 +2,16 @@ package com.kidslauncher.mdm.server
 
 import android.app.Notification
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
@@ -55,6 +58,15 @@ private const val PERIODIC_SYNC_INTERVAL_MS = 5 * 60 * 1000L
 private const val SCREEN_TIME_TICK_MS = 5 * 60 * 1000L
 
 /**
+ * LOCAL-DEVIATION: shortest gap between two wake-triggered syncs - see [wakeReceiver].
+ *
+ * The screen comes on for every notification, so without a floor a chatty afternoon would sync
+ * dozens of times. A minute is well under how long a phone stays awake once someone actually picks
+ * it up, so a real wake still syncs immediately.
+ */
+private const val WAKE_SYNC_MIN_GAP_MS = 60 * 1000L
+
+/**
  * Holds a long-lived SSE connection open to `/api/devices/commands/stream` so Find My Device's
  * ring/lock/stop-ring/wipe arrive in ~1s instead of waiting for the periodic sync below - a
  * supplement to it, not a replacement: every event received here is a content-free nudge, not the
@@ -91,6 +103,46 @@ class CommandListenerService : Service() {
     private var eventSource: EventSource? = null
     private var reconnectDelayMs = INITIAL_RECONNECT_DELAY_MS
     private var stopped = false
+    /** `elapsedRealtime` of the last wake-triggered sync - counts through sleep, unlike uptime. */
+    private var lastWakeSyncAt = 0L
+
+    /**
+     * LOCAL-DEVIATION: syncs the moment the device wakes up.
+     *
+     * The periodic timer below is a [Handler], and `postDelayed` runs on `uptimeMillis`, which does
+     * not advance in deep sleep - a foreground service is exempt from app-standby but that does not
+     * keep the CPU awake. So a phone in a pocket simply stops syncing, which is fine in itself
+     * (nobody is using it, so no policy decision is pending) but leaves it stale at the one moment
+     * that matters: when it is picked up again.
+     *
+     * Deliberately not an AlarmManager wake-up. Waking a sleeping phone every few minutes to ask a
+     * server whether anything changed costs battery all day to answer "no"; reacting to a wake that
+     * was going to happen anyway costs nothing.
+     *
+     * SCREEN_ON fires before the keyguard, USER_PRESENT after unlocking - both are registered
+     * because a screen-on alone already justifies refreshing policy, while an unlock is the
+     * strongest signal the device is about to be used.
+     */
+    private val wakeReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val since = SystemClock.elapsedRealtime() - lastWakeSyncAt
+            if (lastWakeSyncAt != 0L && since < WAKE_SYNC_MIN_GAP_MS) return
+            lastWakeSyncAt = SystemClock.elapsedRealtime()
+
+            Log.i(LOG_TAG, "Woke on ${intent?.action}, syncing")
+            scope.launch {
+                try {
+                    // Counters first: the tick that would normally fold these in has been frozen
+                    // for as long as the device slept, and the budget decision below reads them.
+                    ScreenTimeTracker.poll(applicationContext)
+                    AppEnforcer.apply(applicationContext, cachedPolicy())
+                    performMdmSync(applicationContext)
+                } catch (e: Exception) {
+                    Log.w(LOG_TAG, "Wake sync failed", e)
+                }
+            }
+        }
+    }
 
     /**
      * Built fresh on every [connect] call rather than cached.
@@ -121,6 +173,17 @@ class CommandListenerService : Service() {
         connect()
         schedulePeriodicSync()
         scheduleScreenTimeTick()
+        ContextCompat.registerReceiver(
+            this,
+            wakeReceiver,
+            IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_ON)
+                addAction(Intent.ACTION_USER_PRESENT)
+            },
+            // Both are protected system broadcasts - nothing but the OS can send them, so the
+            // receiver has no reason to be visible to other apps.
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
         // Piggybacks on this same foreground service/notification rather than running as a
         // second one - see UnifiedPushRelay's own doc comment for why. Off by default (a parent
         // has to opt in from Settings), so this is a no-op on a device where that's never been
@@ -136,6 +199,11 @@ class CommandListenerService : Service() {
 
     override fun onDestroy() {
         stopped = true
+        try {
+            unregisterReceiver(wakeReceiver)
+        } catch (e: IllegalArgumentException) {
+            // Never registered, or already gone - nothing to undo.
+        }
         handler.removeCallbacksAndMessages(null)
         eventSource?.cancel()
         UnifiedPushRelay.stop()
@@ -256,11 +324,19 @@ class CommandListenerService : Service() {
         if (stopped) return
         handler.postDelayed(
             {
-                // Picks up the location permission whenever Device-Owner self-grant lands, which
-                // on a fresh device is after this service has already started.
-                promoteForegroundType()
-                scope.launch { performMdmSync(applicationContext) }
-                schedulePeriodicSync()
+                // Re-armed in a finally: this chain is the only thing scheduling the next run, so
+                // anything that throws here would silently end periodic syncing until the service
+                // is recreated - indistinguishable from the app "just stopping".
+                try {
+                    // Picks up the location permission whenever Device-Owner self-grant lands,
+                    // which on a fresh device is after this service has already started.
+                    promoteForegroundType()
+                    scope.launch { performMdmSync(applicationContext) }
+                } catch (e: Exception) {
+                    Log.w(LOG_TAG, "Periodic sync tick failed", e)
+                } finally {
+                    schedulePeriodicSync()
+                }
             },
             PERIODIC_SYNC_INTERVAL_MS,
         )
@@ -279,15 +355,18 @@ class CommandListenerService : Service() {
         if (stopped) return
         handler.postDelayed(
             {
-                scope.launch {
-                    try {
-                        ScreenTimeTracker.poll(applicationContext)
-                        AppEnforcer.apply(applicationContext, cachedPolicy())
-                    } catch (e: Exception) {
-                        Log.w(LOG_TAG, "Screen-time tick failed", e)
+                try {
+                    scope.launch {
+                        try {
+                            ScreenTimeTracker.poll(applicationContext)
+                            AppEnforcer.apply(applicationContext, cachedPolicy())
+                        } catch (e: Exception) {
+                            Log.w(LOG_TAG, "Screen-time tick failed", e)
+                        }
                     }
+                } finally {
+                    scheduleScreenTimeTick()
                 }
-                scheduleScreenTimeTick()
             },
             SCREEN_TIME_TICK_MS,
         )
