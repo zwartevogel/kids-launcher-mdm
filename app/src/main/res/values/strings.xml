@@ -104,6 +104,11 @@
     <string name="toast_mdm_scan_qr_cancelled">Scan cancelled.</string>
 
     <string name="settings_mdm_sync_now">Sync now</string>
+    <string name="lock_sync_now">Check again</string>
+    <string name="lock_last_sync_never">Never synced with the server yet</string>
+    <string name="lock_last_sync">Last updated %1$s</string>
+    <string name="lock_sync_checking">Checking\u2026</string>
+    <string name="lock_sync_failed">Could not reach the server</string>
     <string name="toast_mdm_sync_done">Sync complete.</string>
     <string name="toast_mdm_sync_failed">Sync failed - couldn\'t reach the server.</string>
 

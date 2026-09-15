@@ -51,6 +51,7 @@
     <string name="settings_mdm_restrictions_paused_key" translatable="false">mdm.restrictions_paused</string>
     <string name="settings_mdm_tracked_app_update_state_key" translatable="false">mdm.tracked_app_update_state</string>
     <string name="settings_mdm_screen_time_state_key" translatable="false">mdm.screen_time_state</string>
+    <string name="settings_mdm_last_sync_at_key" translatable="false">mdm.last_sync_at</string>
     <string name="settings_mdm_last_active_location_fetch_at_ms_key" translatable="false">mdm.last_active_location_fetch_at_ms</string>
     <string name="settings_mdm_cached_location_json_key" translatable="false">mdm.cached_location_json</string>
 

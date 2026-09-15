@@ -14,8 +14,15 @@ import com.kidslauncher.mdm.R
 import com.kidslauncher.mdm.databinding.ActivityLockBinding
 import com.kidslauncher.mdm.server.LockReason
 import com.kidslauncher.mdm.server.OfflineOverride
+import com.kidslauncher.mdm.server.performMdmSync
 import com.kidslauncher.mdm.server.reevaluateLockReasonFromCache
 import com.kidslauncher.mdm.preferences.LauncherPreferences
+import androidx.lifecycle.lifecycleScope
+import java.text.DateFormat
+import java.util.Date
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private const val LOCK_REASON_REFRESH_INTERVAL_MS = 60_000L
 
@@ -59,6 +66,7 @@ class LockActivity : UIObjectActivity() {
         })
 
         binding.lockUnlockCodeButton.setOnClickListener { showUnlockCodeDialog() }
+        binding.lockSyncButton.setOnClickListener { syncNow() }
     }
 
     private fun showUnlockCodeDialog() {
@@ -103,6 +111,7 @@ class LockActivity : UIObjectActivity() {
             .registerOnSharedPreferenceChangeListener(sharedPreferencesListener)
         refreshHandler.post(refreshRunnable)
         updateMessageOrFinish()
+        updateLastSync()
     }
 
     override fun onStop() {
@@ -117,6 +126,47 @@ class LockActivity : UIObjectActivity() {
             finish()
         } else {
             updateMessageOrFinish()
+        }
+    }
+
+    /**
+     * LOCAL-DEVIATION: lets the child pull fresh policy without the admin PIN.
+     *
+     * The existing "Sync now" lives in Settings, which is precisely where a kid cannot go - so
+     * after a parent granted extra time there was no way to make the phone notice it short of
+     * waiting out a cycle, while the child stares at a screen saying the app is blocked.
+     *
+     * Safe to expose: a sync only ever *fetches* policy, so the worst a child can do by pressing
+     * it repeatedly is apply the parent's rules sooner. [performMdmSync] serialises on its own
+     * mutex, so a double tap cannot overlap with the periodic cycle either.
+     */
+    private fun syncNow() {
+        binding.lockSyncButton.isEnabled = false
+        binding.lockLastSync.setText(R.string.lock_sync_checking)
+        lifecycleScope.launch {
+            val reached = withContext(Dispatchers.IO) { performMdmSync(applicationContext) }
+            binding.lockSyncButton.isEnabled = true
+            if (reached) {
+                // The sync may have lifted the lock entirely, in which case this activity should
+                // disappear rather than report success at a child who can already tell.
+                updateLastSync()
+                finishIfUnlocked()
+            } else {
+                binding.lockLastSync.setText(R.string.lock_sync_failed)
+            }
+        }
+    }
+
+    private fun updateLastSync() {
+        val at = LauncherPreferences.mdm().lastSyncAt()
+        binding.lockLastSync.text = if (at <= 0L) {
+            getString(R.string.lock_last_sync_never)
+        } else {
+            // Device locale and timezone, which is what a child reads the clock in.
+            getString(
+                R.string.lock_last_sync,
+                DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(at)),
+            )
         }
     }
 

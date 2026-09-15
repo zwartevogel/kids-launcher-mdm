@@ -128,6 +128,13 @@ suspend fun performMdmSync(context: Context): Boolean = syncMutex.withLock {
 
     checkForTrackedAppUpdates(context, api)
 
+    // LOCAL-DEVIATION: only a fetch that actually came back from the server counts - a cycle that
+    // fell back to the cached policy is not a sync, and showing it as one on the lock screen would
+    // tell a kid the phone is up to date when it is not.
+    if (freshPolicy != null) {
+        mdm.lastSyncAt(System.currentTimeMillis())
+    }
+
     return freshPolicy != null
 }
 

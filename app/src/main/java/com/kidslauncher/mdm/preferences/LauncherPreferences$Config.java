@@ -89,6 +89,11 @@ import eu.jonahbauer.android.preference.annotations.Preferences;
                         // rather than recomputed because Android only keeps ~7 days of events and a
                         // reboot must not hand the kid a fresh budget.
                         @Preference(name = "screen_time_state", type = String.class),
+                        // LOCAL-DEVIATION: wall-clock millis of the last sync that actually
+                        // reached the server (not merely attempted). Shown on the lock screen so a
+                        // kid staring at a blocked app can see whether the phone is up to date,
+                        // and 0 means "never". See ui.LockActivity.
+                        @Preference(name = "last_sync_at", type = long.class, defaultValue = "0"),
                         // Throttles active location fixes (LocateCommands.currentLocation) - an
                         // active fetch shows Android's location-in-use indicator and visibly slows
                         // the sync it runs in, so it shouldn't fire on every single 2-minute/manual

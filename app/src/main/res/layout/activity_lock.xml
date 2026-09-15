@@ -14,6 +14,25 @@
         android:textSize="24sp"
         android:textStyle="bold" />
 
+    <!-- LOCAL-DEVIATION: a sync a kid can run without the admin PIN. The existing "Sync now" sits
+         behind Settings, which is exactly where a child cannot go, so after a parent grants extra
+         time there was no way to make the phone notice short of waiting out a cycle. -->
+    <TextView
+        android:id="@+id/lock_last_sync"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="24dp"
+        android:gravity="center"
+        android:textSize="14sp"
+        android:alpha="0.7" />
+
+    <Button
+        android:id="@+id/lock_sync_button"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="@string/lock_sync_now" />
+
     <Button
         android:id="@+id/lock_unlock_code_button"
         android:layout_width="wrap_content"
